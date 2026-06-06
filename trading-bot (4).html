@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deriv Trading Bot - Real-Time Strategy Engine</title>
+    <style>
+        :root {
+            --bg-primary: #121420;
+            --bg-card: #1b1e2e;
+            --bg-card-hover: #242838;
+            --text-primary: #e8eaed;
+            --text-secondary: #8b92a5;
+            --accent-green: #00ff88;
+            --accent-red: #ff3b5c;
+            --accent-blue: #3b82f6;
+            --accent-yellow: #fbbf24;
+            --border-color: #2a2f42;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, var(--bg-card) 0%, #1a1d2e 100%);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+        }
+
+        header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            background: linear-gradient(90deg, var(--accent-green), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            padding: 20px;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* Control Panel Styles */
+        .control-section {
+            margin-bottom: 24px;
+        }
+
+        .control-label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .control-input {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .control-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .control-input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            background: #0a0b10;
+        }
+
+        select.control-input {
+            cursor: pointer;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-connect {
+            background: linear-gradient(135deg, #00cc6a, #00ff88);
+            color: #000;
+        }
+
+        .btn-connect:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        .btn-disconnect {
+            background: var(--bg-primary);
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
+        }
+
+        .btn-disconnect:hover {
+            background: var(--accent-red);
+            color: #fff;
+        }
+
+        .btn-disconnect:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Strategy Toggle */
+        .strategy-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            background: var(--bg-primary);
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .strategy-toggle-label {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 56px;
+            height: 28px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--border-color);
+            border-radius: 28px;
+            transition: 0.3s;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--accent-green);
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(28px);
+        }
+
+        /* Right Column */
+        .right-column {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Stats Dashboard */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+        }
+
+        .stat-card {
+            background: var(--bg-primary);
+            border-radius: 10px;
+            padding: 18px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-blue);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .stat-value.green {
+            color: var(--accent-green);
+        }
+
+        .stat-value.red {
+            color: var(--accent-red);
+        }
+
+        .stat-value.blue {
+            color: var(--accent-blue);
+        }
+
+        .stat-sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
+        .stat-sub.bullish {
+            color: var(--accent-green);
+        }
+
+        .stat-sub.bearish {
+            color: var(--accent-red);
+        }
+
+        /* Console/Telemetry */
+        .console-container {
+            flex: 1;
+            min-height: 300px;
+        }
+
+        .console-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .btn-clear {
+            padding: 6px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-clear:hover {
+            border-color: var(--accent-blue);
+            color: var(--text-primary);
+        }
+
+        .console {
+            height: 320px;
+            background: #0a0b10;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .console::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .console::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .console::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1d28;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-time {
+            color: var(--text-secondary);
+            margin-right: 8px;
+        }
+
+        .log-type {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .log-type.info {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--accent-blue);
+        }
+
+        .log-type.success {
+            background: rgba(0, 255, 136, 0.2);
+            color: var(--accent-green);
+        }
+
+        .log-type.warning {
+            background: rgba(251, 191, 36, 0.2);
+            color: var(--accent-yellow);
+        }
+
+        .log-type.error {
+            background: rgba(255, 59, 92, 0.2);
+            color: var(--accent-red);
+        }
+
+        .log-type.trade {
+            background: rgba(168, 85, 247, 0.2);
+            color: #a855f7;
+        }
+
+        .log-message {
+            color: var(--text-primary);
+        }
+
+        /* Connection Status */
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent-red);
+        }
+
+        .status-dot.connected {
+            background: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-text {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* Indicator Cards */
+        .indicator-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .indicator-card {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 14px;
+            border: 1px solid var(--border-color);
+        }
+
+        .indicator-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .indicator-value {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: 'Consolas', monospace;
+        }
+
+        .indicator-value.up {
+            color: var(--accent-green);
+        }
+
+        .indicator-value.down {
+            color: var(--accent-red);
+        }
+
+        .indicator-value.neutral {
+            color: var(--text-secondary);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 16px;
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+
+        .footer strong {
+            color: var(--accent-red);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>⚡ Deriv Trading Bot</h1>
+            <p>Real-Time Strategy Engine | Volatility Indices</p>
+        </header>
+
+        <div class="main-grid">
+            <!-- Left Panel: Control Panel -->
+            <div class="left-panel">
+                <div class="panel">
+                    <div class="panel-title">🎛️ Control Panel</div>
+                    
+                    <!-- Connection Status -->
+                    <div class="connection-status">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span class="status-text" id="statusText">Disconnected</span>
+                    </div>
+
+                    <!-- App ID Input -->
+                    <div class="control-section">
+                        <label class="control-label">App ID</label>
+                        <input type="text" class="control-input" id="appId" value="33tNou5lfRTxAFmfBiMC7" disabled>
+                    </div>
+
+                    <!-- API Token Input -->
+                    <div class="control-section">
+                        <label class="control-label">API Personal Access Token</label>
+                        <input type="text" class="control-input" id="apiToken" value="pat_9533dc8a422e84047c6f7b374b3820a8fc73f760e7b91bd12eab123e285434a1" disabled>
+                    </div>
+
+                    <!-- Stake Amount -->
+                    <div class="control-section">
+                        <label class="control-label">Stake Amount (USD)</label>
+                        <input type="number" class="control-input" id="stakeAmount" value="1.00" min="0.35" step="0.01">
+                    </div>
+
+                    <!-- Asset Selection -->
+                    <div class="control-section">
+                        <label class="control-label">Asset Selection</label>
+                        <select class="control-input" id="assetSelect">
+                            <option value="R_100">Volatility 100 Index (R_100)</option>
+                            <option value="R_75">Volatility 75 Index (R_75)</option>
+                            <option value="R_50">Volatility 50 Index (R_50)</option>
+                            <option value="R_25">Volatility 25 Index (R_25)</option>
+                            <option value="R_10">Volatility 10 Index (R_10)</option>
+                        </select>
+                    </div>
+
+                    <!-- Connect/Disconnect Buttons -->
+                    <div class="btn-row">
+                        <button class="btn btn-connect" id="btnConnect">Connect</button>
+                        <button class="btn btn-disconnect" id="btnDisconnect" disabled>Disconnect</button>
+                    </div>
+
+                    <!-- Strategy Toggle -->
+                    <div class="strategy-toggle">
+                        <span class="strategy-toggle-label">🤖 Strategy Bot</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="strategyToggle" disabled>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- Indicator Parameters Display -->
+                    <div class="indicator-grid">
+                        <div class="indicator-card">
+                            <div class="indicator-label">SMI Settings</div>
+                            <div class="indicator-value neutral">(10, 3, 3, 3)</div>
+                        </div>
+                        <div class="indicator-card">
+                            <div class="indicator-label">LSMA Length</div>
+                            <div class="indicator-value neutral">25</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Dashboard + Console -->
+            <div class="right-column">
+                <!-- Stats Dashboard -->
+                <div class="panel">
+                    <div class="panel-title">📊 Live Monitor Matrix</div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Current Tick Price</div>
+                            <div class="stat-value blue" id="tickPrice">--</div>
+                            <div class="stat-sub" id="tickDirection">Waiting for data...</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">SMI Line</div>
+                            <div class="stat-value" id="smiLine">--</div>
+                            <div class="stat-sub" id="smiStatus">Calculating...</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">SMI Signal</div>
+                            <div class="stat-value" id="smiSignal">--</div>
+                            <div class="stat-sub">3-period EMA</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">LSMA Slope</div>
+                            <div class="stat-value" id="lsmaSlope">--</div>
+                            <div class="stat-sub" id="lsmaStatus">Waiting...</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Net P/L</div>
+                            <div class="stat-value green" id="netProfit">$0.00</div>
+                            <div class="stat-sub" id="tradeCount">0 trades</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Data Window</div>
+                            <div class="stat-value blue" id="dataWindow">0/50</div>
+                            <div class="stat-sub">Min: 50 ticks</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Telemetry -->
+                <div class="panel console-container">
+                    <div class="console-header">
+                        <div class="panel-title" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">📟 System Telemetry</div>
+                        <button class="btn-clear" id="btnClearConsole">Clear</button>
+                    </div>
+                    <div class="console" id="console">
+                        <div class="log-entry">
+                            <span class="log-time">[--:--:--]</span>
+                            <span class="log-type info">SYSTEM</span>
+                            <span class="log-message">Trading bot initialized. Configure settings and click Connect to begin.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <strong>⚠️ WARNING:</strong> This is a real trading bot with live execution. Use at your own risk. Always monitor positions.
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // TRADING BOT - DERIV API v3 ENGINE
+        // ==========================================
+
+        class TradingBot {
+            constructor() {
+                // Core Configuration
+                this.appId = '33tNou5lfRTxAFmfBiMC7';
+                this.apiToken = 'pat_9533dc8a422e84047c6f7b374b3820a8fc73f760e7b91bd12eab123e285434a1';
+                this.ws = null;
+                this.isConnected = false;
+                this.isTradingActive = false;
+                this.isTradingLock = false;
+                
+                // Data Storage
+                this.tickHistory = [];
+                this.maxTicks = 120;
+                this.minTicks = 50;
+                
+                // Strategy State
+                this.currentAsset = 'R_100';
+                this.stakeAmount = 1.00;
+                this.netProfit = 0;
+                this.tradeCount = 0;
+                this.lastSMI = 0;
+                this.lastSignal = 0;
+                
+                // Heartbeat
+                this.heartbeatInterval = null;
+                
+                // DOM Elements
+                this.elements = {
+                    btnConnect: document.getElementById('btnConnect'),
+                    btnDisconnect: document.getElementById('btnDisconnect'),
+                    btnClearConsole: document.getElementById('btnClearConsole'),
+                    strategyToggle: document.getElementById('strategyToggle'),
+                    stakeAmount: document.getElementById('stakeAmount'),
+                    assetSelect: document.getElementById('assetSelect'),
+                    statusDot: document.getElementById('statusDot'),
+                    statusText: document.getElementById('statusText'),
+                    console: document.getElementById('console'),
+                    tickPrice: document.getElementById('tickPrice'),
+                    tickDirection: document.getElementById('tickDirection'),
+                    smiLine: document.getElementById('smiLine'),
+                    smiSignal: document.getElementById('smiSignal'),
+                    smiStatus: document.getElementById('smiStatus'),
+                    lsmaSlope: document.getElementById('lsmaSlope'),
+                    lsmaStatus: document.getElementById('lsmaStatus'),
+                    netProfit: document.getElementById('netProfit'),
+                    tradeCount: document.getElementById('tradeCount'),
+                    dataWindow: document.getElementById('dataWindow')
+                };
+                
+                this.bindEvents();
+            }
+
+            bindEvents() {
+                this.elements.btnConnect.addEventListener('click', () => this.connect());
+                this.elements.btnDisconnect.addEventListener('click', () => this.disconnect());
+                this.elements.btnClearConsole.addEventListener('click', () => this.clearConsole());
+                this.elements.strategyToggle.addEventListener('change', (e) => this.toggleStrategy(e.target.checked));
+                this.elements.stakeAmount.addEventListener('change', (e) => {
+                    this.stakeAmount = parseFloat(e.target.value) || 1.00;
+                    this.log('info', `Stake updated to $${this.stakeAmount.toFixed(2)}`);
+                });
+                this.elements.assetSelect.addEventListener('change', (e) => {
+                    if (this.isConnected) {
+                        this.currentAsset = e.target.value;
+                        this.subscribeToAsset();
+                    }
+                });
+            }
+
+            log(type, message) {
+                const console = this.elements.console;
+                const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                entry.innerHTML = `
+                    <span class="log-time">[${time}]</span>
+                    <span class="log-type ${type}">${type.toUpperCase()}</span>
+                    <span class="log-message">${message}</span>
+                `;
+                console.appendChild(entry);
+                console.scrollTop = console.scrollHeight;
+            }
+
+            clearConsole() {
+                this.elements.console.innerHTML = '';
+                this.log('info', 'Console cleared.');
+            }
+
+            updateConnectionStatus(connected) {
+                this.isConnected = connected;
+                const { statusDot, statusText, btnConnect, btnDisconnect, strategyToggle } = this.elements;
+                
+                if (connected) {
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Connected to Deriv';
+                    btnConnect.disabled = true;
+                    btnDisconnect.disabled = false;
+                    strategyToggle.disabled = false;
+                } else {
+                    statusDot.classList.remove('connected');
+                    statusText.textContent = 'Disconnected';
+                    btnConnect.disabled = false;
+                    btnDisconnect.disabled = true;
+                    strategyToggle.disabled = true;
+                    strategyToggle.checked = false;
+                    this.isTradingActive = false;
+                }
+            }
+
+            connect() {
+                this.log('info', 'Initiating WebSocket connection...');
+                
+                // Try primary endpoint
+                const wsUrl = 'wss://ws.binaryws.com/websockets/v3';
+                this.log('info', `Connecting to: ${wsUrl}`);
+                
+                try {
+                    this.ws = new WebSocket(wsUrl);
+                } catch (e) {
+                    this.log('error', `Failed to create WebSocket: ${e.message}`);
+                    return;
+                }
+                
+                this.ws.onopen = () => {
+                    this.log('success', '✓ WebSocket connected. Starting handshake...');
+                    // First, get active symbols (public endpoint, no auth needed)
+                    this.ws.send(JSON.stringify({
+                        active_symbols: 'brief',
+                        product_type: 'basic',
+                        req_id: 1
+                    }));
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        // Log all incoming messages for debugging
+                        this.log('info', `Received: ${data.msg_type || 'unknown'}`);
+                        
+                        this.routeMessage(data);
+                    } catch (e) {
+                        this.log('error', `Failed to parse message: ${e.message}`);
+                    }
+                };
+                
+                this.ws.onerror = (error) => {
+                    this.log('error', 'WebSocket error occurred.');
+                    console.error('WebSocket Error:', error);
+                    if (error.target) {
+                        this.log('error', `ReadyState: ${error.target.readyState}`);
+                        this.log('error', `URL: ${error.target.url}`);
+                    }
+                };
+                
+                this.ws.onclose = (event) => {
+                    this.log('warning', `Connection closed. Code: ${event.code}, Reason: ${event.reason || 'none'}`);
+                    this.updateConnectionStatus(false);
+                    this.stopHeartbeat();
+                    
+                    // Only auto-reconnect a few times
+                    if (!this.reconnectAttempts) this.reconnectAttempts = 0;
+                    this.reconnectAttempts++;
+                    
+                    if (this.reconnectAttempts <= 3) {
+                        this.log('info', `Reconnecting in 5s... (attempt ${this.reconnectAttempts}/3)`);
+                        setTimeout(() => this.connect(), 5000);
+                    } else {
+                        this.log('error', 'Max reconnect attempts reached. Please manually reconnect.');
+                    }
+                };
+            }
+
+            disconnect() {
+                this.log('info', 'Disconnecting from Deriv...');
+                this.stopHeartbeat();
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                }
+                this.updateConnectionStatus(false);
+                this.tickHistory = [];
+                this.log('info', 'Disconnected successfully.');
+            }
+
+            startHeartbeat() {
+                this.heartbeatInterval = setInterval(() => {
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ ping: 1 }));
+                        this.log('info', 'Heartbeat ping sent.');
+                    }
+                }, 30000);
+            }
+
+            stopHeartbeat() {
+                if (this.heartbeatInterval) {
+                    clearInterval(this.heartbeatInterval);
+                    this.heartbeatInterval = null;
+                }
+            }
+
+            routeMessage(msg) {
+                switch (msg.msg_type) {
+                    case 'authorize':
+                        this.handleAuthorization(msg);
+                        break;
+                    case 'active_symbols':
+                        this.handleActiveSymbols(msg);
+                        break;
+                    case 'tick':
+                        this.handleTick(msg);
+                        break;
+                    case 'proposal_open_contract':
+                        this.handleContractUpdate(msg);
+                        break;
+                    case 'proposal':
+                        this.handleProposal(msg);
+                        break;
+                    case 'error':
+                        this.log('error', `API Error: ${msg.error?.message || 'Unknown error'}`);
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            handleActiveSymbols(msg) {
+                if (msg.active_symbols && msg.active_symbols.length > 0) {
+                    this.log('success', `Received ${msg.active_symbols.length} active symbols`);
+                    // Now authorize
+                    this.log('info', 'Authorizing with token...');
+                    this.ws.send(JSON.stringify({ authorize: this.apiToken }));
+                } else if (msg.error) {
+                    this.log('error', `Failed to get symbols: ${msg.error.message}`);
+                }
+            }
+
+            handleAuthorization(msg) {
+                if (msg.authorize) {
+                    this.log('success', `✓ Authorized as: ${msg.authorize.email}`);
+                    this.log('info', `Balance: ${msg.authorize.balance} ${msg.authorize.currency}`);
+                    this.startHeartbeat();
+                    this.subscribeToAsset();
+                    this.updateConnectionStatus(true);
+                } else if (msg.error) {
+                    this.log('error', `Authorization failed: ${msg.error.message}`);
+                    this.log('error', `Error code: ${msg.error.code}`);
+                }
+            }
+
+            subscribeToAsset() {
+                this.log('info', `Subscribing to ${this.currentAsset}...`);
+                this.ws.send(JSON.stringify({
+                    ticks: this.currentAsset,
+                    subscribe: 1
+                }));
+                this.ws.send(JSON.stringify({
+                    proposal_open_contract: 1,
+                    subscribe: 1
+                }));
+            }
+
+            handleTick(msg) {
+                if (msg.tick) {
+                    const price = msg.tick.quote;
+                    const direction = msg.tick.bid > msg.tick.ask ? '↑' : '↓';
+                    
+                    // Update tick history
+                    this.tickHistory.push(price);
+                    if (this.tickHistory.length > this.maxTicks) {
+                        this.tickHistory.shift();
+                    }
+                    
+                    // Update UI
+                    this.elements.tickPrice.textContent = price.toFixed(2);
+                    this.elements.tickDirection.textContent = `Direction: ${direction}`;
+                    
+                    // Calculate indicators if we have enough data
+                    if (this.tickHistory.length >= this.minTicks) {
+                        const smiData = this.calculateSMI();
+                        const lsmaData = this.calculateLSMA();
+                        
+                        this.updateIndicatorDisplay(smiData, lsmaData);
+                        this.evaluateStrategy(smiData, lsmaData, price);
+                    } else {
+                        const remaining = this.minTicks - this.tickHistory.length;
+                        this.elements.dataWindow.textContent = `${this.tickHistory.length}/${this.minTicks}`;
+                        this.elements.smiStatus.textContent = `Need ${remaining} more ticks`;
+                        this.elements.lsmaStatus.textContent = 'Filling buffer...';
+                    }
+                }
+            }
+
+            calculateLSMA() {
+                const prices = this.tickHistory.slice(-25);
+                const n = prices.length;
+                
+                // Linear regression (Least Squares)
+                let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+                
+                for (let i = 0; i < n; i++) {
+                    sumX += i;
+                    sumY += prices[i];
+                    sumXY += i * prices[i];
+                    sumX2 += i * i;
+                }
+                
+                const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+                const intercept = (sumY - slope * sumX) / n;
+                const currentLSMA = intercept + slope * (n - 1);
+                const previousLSMA = intercept + slope * (n - 2);
+                
+                const isUp = currentLSMA > previousLSMA;
+                const slopeValue = currentLSMA - previousLSMA;
+                
+                return {
+                    current: currentLSMA,
+                    previous: previousLSMA,
+                    slope: slopeValue,
+                    direction: isUp ? 'UP' : 'DOWN',
+                    isFlat: Math.abs(slopeValue) < 0.00001
+                };
+            }
+
+            calculateSMI() {
+                const prices = this.tickHistory;
+                const period = 10;
+                const emaPeriod1 = 3;
+                const emaPeriod2 = 3;
+                const signalPeriod = 3;
+                
+                if (prices.length < period) return { value: 0, signal: 0 };
+                
+                // Get highest and lowest in last 10 ticks
+                const lastPrices = prices.slice(-period);
+                const high = Math.max(...lastPrices);
+                const low = Math.min(...lastPrices);
+                const close = prices[prices.length - 1];
+                
+                // Calculate double EMA of HL/2
+                const hl2 = (high + low) / 2;
+                
+                // First EMA smoothing
+                const ema1 = this.ema(hl2, emaPeriod1, prices);
+                
+                // Second EMA smoothing
+                const ema2 = this.ema(ema1, emaPeriod2, prices);
+                
+                // Calculate SMI
+                const prevClose = prices[prices.length - 2] || close;
+                const relativeDistance = close - (high + low) / 2;
+                
+                // Double smoothed SMI
+                const smiValue = ema2 * 2; // Scale factor
+                
+                // Signal line - 3-period EMA of SMI
+                const signalValue = this.emaSignal(smiValue, signalPeriod);
+                
+                return {
+                    value: smiValue,
+                    signal: signalValue,
+                    high: high,
+                    low: low,
+                    close: close
+                };
+            }
+
+            ema(currentValue, period, prices) {
+                if (prices.length < period) return currentValue;
+                
+                const alpha = 2 / (period + 1);
+                let ema = prices.slice(-period).reduce((a, b) => a + b, 0) / period;
+                
+                for (let i = prices.length - period; i < prices.length; i++) {
+                    ema = alpha * prices[i] + (1 - alpha) * ema;
+                }
+                
+                return ema;
+            }
+
+            emaSignal(value, period) {
+                // Simple EMA for signal line
+                if (!this.signalHistory) this.signalHistory = [];
+                
+                this.signalHistory.push(value);
+                if (this.signalHistory.length > period * 2) {
+                    this.signalHistory.shift();
+                }
+                
+                if (this.signalHistory.length < period) return value;
+                
+                const alpha = 2 / (period + 1);
+                let ema = this.signalHistory.slice(0, period).reduce((a, b) => a + b, 0) / period;
+                
+                for (let i = period; i < this.signalHistory.length; i++) {
+                    ema = alpha * this.signalHistory[i] + (1 - alpha) * ema;
+                }
+                
+                return ema;
+            }
+
+            updateIndicatorDisplay(smiData, lsmaData) {
+                const smiVal = smiData.value.toFixed(4);
+                const sigVal = smiData.signal.toFixed(4);
+                
+                this.elements.smiLine.textContent = smiVal;
+                this.elements.smiSignal.textContent = sigVal;
+                
+                // Colorize SMI based on position
+                if (smiData.value < -50) {
+                    this.elements.smiLine.className = 'stat-value green';
+                    this.elements.smiStatus.textContent = 'Oversold Zone';
+                } else if (smiData.value > 50) {
+                    this.elements.smiLine.className = 'stat-value red';
+                    this.elements.smiStatus.textContent = 'Overbought Zone';
+                } else {
+                    this.elements.smiLine.className = 'stat-value blue';
+                    this.elements.smiStatus.textContent = 'Neutral Zone';
+                }
+                
+                // LSMA Display
+                this.elements.lsmaSlope.textContent = lsmaData.direction;
+                this.elements.lsmaSlope.className = `stat-value ${lsmaData.direction === 'UP' ? 'green' : 'red'}`;
+                this.elements.lsmaStatus.textContent = lsmaData.isFlat ? 'FLAT MARKET' : `Slope: ${lsmaData.slope.toFixed(6)}`;
+                
+                // Data window
+                this.elements.dataWindow.textContent = `${this.tickHistory.length}/${this.maxTicks}`;
+                
+                // Store for cross reference
+                this.lastSMI = smiData.value;
+                this.lastSignal = smiData.signal;
+            }
+
+            evaluateStrategy(smiData, lsmaData, currentPrice) {
+                if (!this.isTradingActive || this.isTradingLock) return;
+                
+                // Anti-Whipsaw: Skip if market is flat
+                if (lsmaData.isFlat) {
+                    this.log('warning', 'Market flat - skipping trade');
+                    return;
+                }
+                
+                const smi = smiData.value;
+                const signal = smiData.signal;
+                const lsmaUp = lsmaData.direction === 'UP';
+                const lsmaDown = lsmaData.direction === 'DOWN';
+                
+                // SMI crossed above signal
+                const smiCrossedUp = smi > signal && this.lastSMI <= this.lastSignal;
+                const smiCrossedDown = smi < signal && this.lastSMI >= this.lastSignal;
+                
+                // CALL: LSMA UP + SMI crosses above Signal below -50
+                if (lsmaUp && smiCrossedUp && smi < -50 && smi > -100) {
+                    this.executeTrade('CALL', currentPrice);
+                }
+                // PUT: LSMA DOWN + SMI crosses below Signal above +50
+                else if (lsmaDown && smiCrossedDown && smi > 50 && smi < 100) {
+                    this.executeTrade('PUT', currentPrice);
+                }
+            }
+
+            executeTrade(direction, price) {
+                this.isTradingLock = true;
+                
+                // Determine expiry based on SMI severity
+                let duration;
+                const absSmi = Math.abs(this.lastSMI);
+                
+                if (absSmi >= 75) {
+                    duration = 6;
+                    this.log('trade', `🔥 HYPER-REVERSAL detected (SMI: ${absSmi.toFixed(1)}), using 6-tick expiry`);
+                } else {
+                    duration = 9;
+                    this.log('trade', `📊 Standard reversal (SMI: ${absSmi.toFixed(1)}), using 9-tick expiry`);
+                }
+                
+                this.log('trade', `${direction === 'CALL' ? '📈' : '📉'} EXECUTING ${direction} at ${price.toFixed(2)}, Stake: $${this.stakeAmount.toFixed(2)}, Expiry: ${duration} ticks`);
+                
+                const contractRequest = {
+                    proposal: 1,
+                    amount: this.stakeAmount,
+                    barrier: '+0.1',
+                    basis: 'stake',
+                    contract_type: direction,
+                    currency: 'USD',
+                    duration: duration,
+                    duration_unit: 't',
+                    symbol: this.currentAsset
+                };
+                
+                this.ws.send(JSON.stringify(contractRequest));
+            }
+
+            handleProposal(msg) {
+                if (msg.proposal) {
+                    this.log('trade', `Proposal received: ${msg.proposal.id}`);
+                    // Accept the proposal
+                    this.ws.send(JSON.stringify({
+                        buy: msg.proposal.id,
+                        price: this.stakeAmount
+                    }));
+                }
+            }
+
+            handleContractUpdate(msg) {
+                if (msg.proposal_open_contract) {
+                    const contract = msg.proposal_open_contract;
+                    
+                    if (contract.is_sold) {
+                        const pnl = contract.profit_win || contract.profit_loss || 0;
+                        this.netProfit += pnl;
+                        this.tradeCount++;
+                        
+                        const result = pnl >= 0 ? 'WIN' : 'LOSS';
+                        this.log('trade', `🏁 Contract ${result}: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`);
+                        
+                        // Update P/L display
+                        this.elements.netProfit.textContent = `${pnl >= 0 ? '$' : '-$'}${Math.abs(this.netProfit).toFixed(2)}`;
+                        this.elements.netProfit.className = `stat-value ${pnl >= 0 ? 'green' : 'red'}`;
+                        this.elements.tradeCount.textContent = `${this.tradeCount} trades`;
+                        
+                        // Release lock
+                        this.isTradingLock = false;
+                        this.log('info', 'Trade lock released. Ready for next signal.');
+                    }
+                }
+            }
+
+            toggleStrategy(active) {
+                this.isTradingActive = active;
+                
+                if (active) {
+                    this.log('success', '🤖 Strategy Bot ACTIVE - Monitoring for signals...');
+                } else {
+                    this.log('warning', '⏸️ Strategy Bot PAUSED');
+                }
+            }
+        }
+
+        // Initialize Bot
+        const bot = new TradingBot();
+    </script>
+</body>
+</html>
