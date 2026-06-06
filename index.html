@@ -1077,18 +1077,13 @@
                 const signal = data.signal;
                 const prevSmi = data.lastSMI;
                 const prevSignal = data.lastSignal;
-                const slope = data.slope;
                 const price = data.price;
                 
-                // CALL: LSMA UP + SMI crosses above Signal below -50
-                const callCondition = slope > 0.00001 && 
-                    prevSmi <= prevSignal && smi > signal && 
-                    smi < -50;
+                // CALL: SMI crosses above Signal (bullish crossover)
+                const callCondition = prevSmi <= prevSignal && smi > signal;
                 
-                // PUT: LSMA DOWN + SMI crosses below Signal above +50
-                const putCondition = slope < -0.00001 && 
-                    prevSmi >= prevSignal && smi < signal && 
-                    smi > 50;
+                // PUT: SMI crosses below Signal (bearish crossover)
+                const putCondition = prevSmi >= prevSignal && smi < signal;
                 
                 if (callCondition) {
                     this.activeMarket = symbol;
@@ -1468,7 +1463,14 @@
                     this.log('success', `✓ Authorized as: ${msg.authorize.email}`);
                     this.log('info', `Balance: ${msg.authorize.balance} ${msg.authorize.currency}`);
                     this.startHeartbeat();
-                    this.subscribeToAsset();
+                    
+                    // Subscribe based on mode
+                    if (this.isMultiMarketMode) {
+                        this.subscribeToAllMarkets();
+                    } else {
+                        this.subscribeToAsset();
+                    }
+                    
                     this.updateConnectionStatus(true);
                 } else if (msg.error) {
                     this.log('error', `Authorization failed: ${msg.error.message}`);
@@ -1485,6 +1487,24 @@
                     ticks: this.currentAsset,
                     subscribe: 1
                 }));
+                this.ws.send(JSON.stringify({
+                    proposal_open_contract: 1,
+                    subscribe: 1
+                }));
+            }
+
+            subscribeToAllMarkets() {
+                this.log('info', 'Subscribing to all 18 markets...');
+                
+                // Subscribe to all markets
+                this.markets.forEach(symbol => {
+                    this.ws.send(JSON.stringify({
+                        ticks: symbol,
+                        subscribe: 1
+                    }));
+                });
+                
+                // Subscribe to contract updates
                 this.ws.send(JSON.stringify({
                     proposal_open_contract: 1,
                     subscribe: 1
@@ -1748,27 +1768,18 @@
             evaluateStrategy(smiData, lsmaData, currentPrice) {
                 if (!this.isTradingActive || this.isTradingLock) return;
                 
-                // Anti-Whipsaw: Skip if market is flat
-                if (lsmaData.isFlat) {
-                    this.log('warning', 'Market flat - skipping trade');
-                    return;
-                }
-                
                 const smi = smiData.value;
                 const signal = smiData.signal;
-                const lsmaUp = lsmaData.direction === 'UP';
-                const lsmaDown = lsmaData.direction === 'DOWN';
                 
-                // SMI crossed above signal
+                // SMI crossed above signal = CALL
                 const smiCrossedUp = smi > signal && this.lastSMI <= this.lastSignal;
+                
+                // SMI crossed below signal = PUT
                 const smiCrossedDown = smi < signal && this.lastSMI >= this.lastSignal;
                 
-                // CALL: LSMA UP + SMI crosses above Signal below -50
-                if (lsmaUp && smiCrossedUp && smi < -50 && smi > -100) {
+                if (smiCrossedUp) {
                     this.executeTrade('CALL', currentPrice);
-                }
-                // PUT: LSMA DOWN + SMI crosses below Signal above +50
-                else if (lsmaDown && smiCrossedDown && smi > 50 && smi < 100) {
+                } else if (smiCrossedDown) {
                     this.executeTrade('PUT', currentPrice);
                 }
             }
