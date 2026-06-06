@@ -720,16 +720,54 @@
                         <input type="number" class="control-input" id="stakeAmount" value="1.00" min="0.35" step="0.01">
                     </div>
 
-                    <!-- Asset Selection -->
+                    <!-- Market Mode Selection -->
                     <div class="control-section">
-                        <label class="control-label">Asset Selection</label>
+                        <label class="control-label">Market Mode</label>
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <button class="btn btn-connect" id="btnSingleMarket" style="flex: 1; font-size: 10px; padding: 10px;">
+                                [ SINGLE ]
+                            </button>
+                            <button class="btn btn-connect" id="btnMultiMarket" style="flex: 1; font-size: 10px; padding: 10px; background: linear-gradient(135deg, #001133, #ffb700); border-color: var(--accent-yellow);">
+                                [ AUTO SCAN ]
+                            </button>
+                        </div>
+                        <div id="modeIndicator" style="text-align: center; font-size: 10px; color: var(--accent-blue);">SINGLE MARKET MODE</div>
+                    </div>
+
+                    <!-- Asset Selection (Single Mode) -->
+                    <div class="control-section" id="singleMarketSection">
+                        <label class="control-label">Select Asset</label>
                         <select class="control-input" id="assetSelect">
                             <option value="R_100">Volatility 100 Index (R_100)</option>
                             <option value="R_75">Volatility 75 Index (R_75)</option>
                             <option value="R_50">Volatility 50 Index (R_50)</option>
                             <option value="R_25">Volatility 25 Index (R_25)</option>
                             <option value="R_10">Volatility 10 Index (R_10)</option>
+                            <option value="1HZ10V">1HZ10V</option>
+                            <option value="1HZ25V">1HZ25V</option>
+                            <option value="1HZ50V">1HZ50V</option>
+                            <option value="1HZ75V">1HZ75V</option>
+                            <option value="1HZ100V">1HZ100V</option>
+                            <option value="JD10">JD10</option>
+                            <option value="JD25">JD25</option>
+                            <option value="JD50">JD50</option>
+                            <option value="JD75">JD75</option>
+                            <option value="JD100">JD100</option>
+                            <option value="R_25HJ">R_25HJ</option>
+                            <option value="R_50HJ">R_50HJ</option>
+                            <option value="R_75HJ">R_75HJ</option>
+                            <option value="R_100HJ">R_100HJ</option>
                         </select>
+                    </div>
+
+                    <!-- Multi-Market Display -->
+                    <div class="control-section" id="multiMarketSection" style="display: none;">
+                        <label class="control-label">Scanning 18 Markets</label>
+                        <div id="tickersContainer" style="max-height: 180px; overflow-y: auto; font-size: 10px; background: var(--bg-primary); border-radius: 2px; padding: 8px;"></div>
+                        <div id="activeSignal" style="display: none; margin-top: 10px; padding: 8px; background: var(--bg-primary); border: 1px solid var(--accent-yellow); border-radius: 2px; text-align: center;">
+                            <div style="font-size: 10px; color: var(--accent-yellow);">⚡ SIGNAL DETECTED</div>
+                            <div id="signalInfo" style="font-size: 12px; color: var(--accent-green); margin-top: 4px;"></div>
+                        </div>
                     </div>
 
                     <!-- Connect/Disconnect Buttons -->
@@ -840,10 +878,22 @@
                 
                 // Mode
                 this.isDemoMode = false;
+                this.isMultiMarketMode = false;
                 this.demoInterval = null;
                 this.demoBalance = 10000;
-                this.demoBasePrice = 5000; // Starting price for simulation
+                this.demoBasePrice = 5000;
                 this.demoCurrentPrice = 5000;
+                
+                // Multi-Market State
+                this.markets = [
+                    'R_100', 'R_75', 'R_50', 'R_25', 'R_10',
+                    '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V',
+                    'JD10', 'JD25', 'JD50', 'JD75', 'JD100',
+                    'R_25HJ', 'R_50HJ', 'R_75HJ', 'R_100HJ'
+                ];
+                this.marketData = {}; // { symbol: { price, smi, signal, slope, history, lastSMI, lastSignal } }
+                this.signalQueue = []; // Pending signals from all markets
+                this.activeMarket = null; // Currently trading market
                 
                 // Data Storage
                 this.tickHistory = [];
@@ -899,6 +949,17 @@
                     btnLiveMode.addEventListener('click', () => this.showLiveMode());
                 }
                 
+                // Market mode buttons
+                const btnSingleMarket = document.getElementById('btnSingleMarket');
+                if (btnSingleMarket) {
+                    btnSingleMarket.addEventListener('click', () => this.setSingleMarketMode());
+                }
+                
+                const btnMultiMarket = document.getElementById('btnMultiMarket');
+                if (btnMultiMarket) {
+                    btnMultiMarket.addEventListener('click', () => this.setMultiMarketMode());
+                }
+                
                 // Login button - connects with API token
                 const btnLogin = document.getElementById('btnLogin');
                 if (btnLogin) {
@@ -929,11 +990,157 @@
                 }
             }
 
+            setSingleMarketMode() {
+                this.isMultiMarketMode = false;
+                document.getElementById('modeIndicator').textContent = 'SINGLE MARKET MODE';
+                document.getElementById('modeIndicator').style.color = 'var(--accent-blue)';
+                document.getElementById('singleMarketSection').style.display = 'block';
+                document.getElementById('multiMarketSection').style.display = 'none';
+                document.getElementById('btnSingleMarket').style.boxShadow = 'var(--glow-green)';
+                document.getElementById('btnMultiMarket').style.boxShadow = 'none';
+                this.log('info', 'Switched to SINGLE market mode');
+            }
+
+            setMultiMarketMode() {
+                this.isMultiMarketMode = true;
+                document.getElementById('modeIndicator').textContent = 'AUTO SCAN MODE - 18 Markets';
+                document.getElementById('modeIndicator').style.color = 'var(--accent-yellow)';
+                document.getElementById('singleMarketSection').style.display = 'none';
+                document.getElementById('multiMarketSection').style.display = 'block';
+                document.getElementById('btnMultiMarket').style.boxShadow = '0 0 15px rgba(255, 183, 0, 0.5)';
+                document.getElementById('btnSingleMarket').style.boxShadow = 'none';
+                this.initMarketData();
+                this.renderMarketTickers();
+                this.log('success', '═══════════════════════════════════════');
+                this.log('success', '  AUTO SCAN MODE - 18 Markets');
+                this.log('info', '  Scanning all markets for signals');
+                this.log('success', '═══════════════════════════════════════');
+            }
+
+            initMarketData() {
+                this.marketData = {};
+                this.markets.forEach(symbol => {
+                    this.marketData[symbol] = {
+                        price: 0,
+                        smi: 0,
+                        signal: 0,
+                        slope: 0,
+                        history: [],
+                        lastSMI: 0,
+                        lastSignal: 0
+                    };
+                });
+            }
+
+            renderMarketTickers() {
+                const container = document.getElementById('tickersContainer');
+                let html = '';
+                this.markets.forEach(symbol => {
+                    const data = this.marketData[symbol];
+                    const statusColor = data.price > 0 ? 'var(--accent-green)' : 'var(--text-secondary)';
+                    html += `<div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #0a0a10;">
+                        <span style="color: ${statusColor};">${symbol}</span>
+                        <span id="price_${symbol}" style="color: var(--text-primary);">---</span>
+                        <span id="smi_${symbol}" style="color: var(--accent-blue);">---</span>
+                        <span id="slope_${symbol}" style="color: var(--accent-yellow);">---</span>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            }
+
+            updateMarketTicker(symbol, price, smi, signal, slope) {
+                const data = this.marketData[symbol];
+                data.price = price;
+                data.smi = smi;
+                data.signal = signal;
+                data.slope = slope;
+                
+                const priceEl = document.getElementById(`price_${symbol}`);
+                const smiEl = document.getElementById(`smi_${symbol}`);
+                const slopeEl = document.getElementById(`slope_${symbol}`);
+                
+                if (priceEl) priceEl.textContent = price.toFixed(2);
+                if (smiEl) smiEl.textContent = smi.toFixed(1);
+                if (slopeEl) {
+                    slopeEl.textContent = slope > 0 ? '↑ UP' : slope < 0 ? '↓ DOWN' : '→ FLAT';
+                    slopeEl.style.color = slope > 0 ? 'var(--accent-green)' : slope < 0 ? 'var(--accent-red)' : 'var(--text-secondary)';
+                }
+            }
+
+            checkMultiMarketSignal(symbol) {
+                if (this.isTradingLock || !this.isTradingActive) return;
+                
+                const data = this.marketData[symbol];
+                if (!data || data.history.length < this.minTicks) return;
+                
+                const smi = data.smi;
+                const signal = data.signal;
+                const prevSmi = data.lastSMI;
+                const prevSignal = data.lastSignal;
+                const slope = data.slope;
+                const price = data.price;
+                
+                // CALL: LSMA UP + SMI crosses above Signal below -50
+                const callCondition = slope > 0.00001 && 
+                    prevSmi <= prevSignal && smi > signal && 
+                    smi < -50;
+                
+                // PUT: LSMA DOWN + SMI crosses below Signal above +50
+                const putCondition = slope < -0.00001 && 
+                    prevSmi >= prevSignal && smi < signal && 
+                    smi > 50;
+                
+                if (callCondition) {
+                    this.activeMarket = symbol;
+                    this.showSignalDisplay(symbol, 'CALL', smi);
+                    this.executeTrade('CALL', price);
+                } else if (putCondition) {
+                    this.activeMarket = symbol;
+                    this.showSignalDisplay(symbol, 'PUT', smi);
+                    this.executeTrade('PUT', price);
+                }
+            }
+
+            emaCalculate(data, period) {
+                const k = 2 / (period + 1);
+                const ema = [data[0]];
+                
+                for (let i = 1; i < data.length; i++) {
+                    ema.push(data[i] * k + ema[i - 1] * (1 - k));
+                }
+                
+                return ema;
+            }
+
+            showSignalDisplay(symbol, direction, smi) {
+                const signalEl = document.getElementById('activeSignal');
+                const infoEl = document.getElementById('signalInfo');
+                signalEl.style.display = 'block';
+                infoEl.textContent = `${symbol} → ${direction} (SMI: ${smi.toFixed(1)})`;
+                this.log('trade', `⚡ SIGNAL: ${symbol} ${direction} (SMI: ${smi.toFixed(1)})`);
+            }
+
+            hideSignalDisplay() {
+                document.getElementById('activeSignal').style.display = 'none';
+            }
+
             startDemoMode() {
                 this.isDemoMode = true;
                 this.isConnected = true;
                 this.demoBalance = 10000;
-                this.demoCurrentPrice = this.demoBasePrice;
+                
+                // Initialize all market prices
+                this.demoMarketPrices = {};
+                this.markets.forEach((symbol, i) => {
+                    // Different base prices for different volatility indices
+                    const basePrice = symbol.includes('R_100') ? 5000 : 
+                                     symbol.includes('R_75') ? 4500 :
+                                     symbol.includes('R_50') ? 4000 :
+                                     symbol.includes('R_25') ? 3500 :
+                                     symbol.includes('R_10') ? 2500 :
+                                     3000 + (i * 100);
+                    this.demoMarketPrices[symbol] = basePrice;
+                });
                 
                 // UI updates
                 document.getElementById('modeStatus').textContent = '[ DEMO MODE ACTIVE ]';
@@ -946,10 +1153,16 @@
                 this.updateConnectionStatus(true);
                 this.updateDemoBalance();
                 
+                // Init market data if multi-market mode
+                if (this.isMultiMarketMode) {
+                    this.initMarketData();
+                    this.renderMarketTickers();
+                }
+                
                 this.log('success', '═══════════════════════════════════════');
                 this.log('success', '  DEMO MODE - Virtual Funds Active');
                 this.log('info', `  Balance: $${this.demoBalance.toFixed(2)}`);
-                this.log('info', `  Market: ${this.currentAsset}`);
+                this.log('info', `  Mode: ${this.isMultiMarketMode ? 'AUTO SCAN (18 Markets)' : this.currentAsset}`);
                 this.log('success', '═══════════════════════════════════════');
                 
                 // Start simulated tick stream
@@ -980,38 +1193,74 @@
                     clearInterval(this.demoInterval);
                 }
                 
-                this.log('info', 'Starting demo tick stream...');
+                this.log('info', `Starting demo tick stream... (${this.isMultiMarketMode ? 'ALL MARKETS' : this.currentAsset})`);
                 
                 // Generate ticks every 500ms
                 this.demoInterval = setInterval(() => {
                     if (!this.isDemoMode) return;
                     
-                    // Generate realistic tick price movement
-                    const volatility = 0.5 + Math.random() * 0.5;
-                    const direction = Math.random() > 0.5 ? 1 : -1;
-                    const change = direction * volatility * 10;
-                    
-                    this.demoCurrentPrice += change;
-                    
-                    // Keep price in realistic range (4800-5200 for R_100 style)
-                    if (this.demoCurrentPrice < 4800) this.demoCurrentPrice = 4800;
-                    if (this.demoCurrentPrice > 5200) this.demoCurrentPrice = 5200;
-                    
-                    // Round to 2 decimal places
-                    const tickPrice = Math.round(this.demoCurrentPrice * 100) / 100;
-                    
-                    // Create simulated tick message
-                    const tickData = {
-                        msg_type: 'tick',
-                        tick: {
-                            symbol: this.currentAsset,
-                            quote: tickPrice,
-                            pip_size: 2,
-                            ansi: tickPrice.toString()
+                    if (this.isMultiMarketMode) {
+                        // Generate ticks for ALL markets
+                        this.markets.forEach(symbol => {
+                            const volatility = 0.3 + Math.random() * 0.4;
+                            const direction = Math.random() > 0.5 ? 1 : -1;
+                            const change = direction * volatility * 10;
+                            
+                            if (!this.demoMarketPrices[symbol]) {
+                                this.demoMarketPrices[symbol] = 5000;
+                            }
+                            
+                            this.demoMarketPrices[symbol] += change;
+                            
+                            // Keep price in range
+                            const minPrice = this.demoMarketPrices[symbol] * 0.95;
+                            const maxPrice = this.demoMarketPrices[symbol] * 1.05;
+                            if (this.demoMarketPrices[symbol] < minPrice) this.demoMarketPrices[symbol] = minPrice;
+                            if (this.demoMarketPrices[symbol] > maxPrice) this.demoMarketPrices[symbol] = maxPrice;
+                            
+                            const tickPrice = Math.round(this.demoMarketPrices[symbol] * 100) / 100;
+                            
+                            const tickData = {
+                                msg_type: 'tick',
+                                tick: {
+                                    symbol: symbol,
+                                    quote: tickPrice,
+                                    pip_size: 2,
+                                    ansi: tickPrice.toString()
+                                }
+                            };
+                            
+                            this.routeMessage(tickData);
+                        });
+                    } else {
+                        // Single market mode
+                        const volatility = 0.5 + Math.random() * 0.5;
+                        const direction = Math.random() > 0.5 ? 1 : -1;
+                        const change = direction * volatility * 10;
+                        
+                        if (!this.demoMarketPrices[this.currentAsset]) {
+                            this.demoMarketPrices[this.currentAsset] = 5000;
                         }
-                    };
-                    
-                    this.routeMessage(tickData);
+                        
+                        this.demoMarketPrices[this.currentAsset] += change;
+                        
+                        if (this.demoMarketPrices[this.currentAsset] < 4800) this.demoMarketPrices[this.currentAsset] = 4800;
+                        if (this.demoMarketPrices[this.currentAsset] > 5200) this.demoMarketPrices[this.currentAsset] = 5200;
+                        
+                        const tickPrice = Math.round(this.demoMarketPrices[this.currentAsset] * 100) / 100;
+                        
+                        const tickData = {
+                            msg_type: 'tick',
+                            tick: {
+                                symbol: this.currentAsset,
+                                quote: tickPrice,
+                                pip_size: 2,
+                                ansi: tickPrice.toString()
+                            }
+                        };
+                        
+                        this.routeMessage(tickData);
+                    }
                     
                 }, 500);
             }
@@ -1244,33 +1493,116 @@
 
             handleTick(msg) {
                 if (msg.tick) {
+                    const symbol = msg.tick.symbol;
                     const price = msg.tick.quote;
                     const direction = msg.tick.bid > msg.tick.ask ? '↑' : '↓';
                     
-                    // Update tick history
-                    this.tickHistory.push(price);
-                    if (this.tickHistory.length > this.maxTicks) {
-                        this.tickHistory.shift();
-                    }
-                    
-                    // Update UI
-                    this.elements.tickPrice.textContent = price.toFixed(2);
-                    this.elements.tickDirection.textContent = `Direction: ${direction}`;
-                    
-                    // Calculate indicators if we have enough data
-                    if (this.tickHistory.length >= this.minTicks) {
-                        const smiData = this.calculateSMI();
-                        const lsmaData = this.calculateLSMA();
+                    if (this.isMultiMarketMode) {
+                        // Multi-market mode
+                        const market = this.marketData[symbol];
+                        if (!market) return;
                         
-                        this.updateIndicatorDisplay(smiData, lsmaData);
-                        this.evaluateStrategy(smiData, lsmaData, price);
+                        // Update market history
+                        market.history.push(price);
+                        if (market.history.length > this.maxTicks) {
+                            market.history.shift();
+                        }
+                        
+                        // Update ticker display
+                        if (market.history.length >= this.minTicks) {
+                            const smiData = this.calculateMarketSMI(symbol);
+                            const lsmaData = this.calculateMarketLSMA(symbol);
+                            
+                            // Update stored values
+                            market.lastSMI = market.smi;
+                            market.lastSignal = market.signal;
+                            market.smi = smiData.smi;
+                            market.signal = smiData.signal;
+                            market.slope = lsmaData.slope;
+                            
+                            // Update ticker UI
+                            this.updateMarketTicker(symbol, price, smiData.smi, smiData.signal, lsmaData.slope);
+                            
+                            // Check for signals
+                            this.checkMultiMarketSignal(symbol);
+                        }
                     } else {
-                        const remaining = this.minTicks - this.tickHistory.length;
-                        this.elements.dataWindow.textContent = `${this.tickHistory.length}/${this.minTicks}`;
-                        this.elements.smiStatus.textContent = `Need ${remaining} more ticks`;
-                        this.elements.lsmaStatus.textContent = 'Filling buffer...';
+                        // Single market mode
+                        this.tickHistory.push(price);
+                        if (this.tickHistory.length > this.maxTicks) {
+                            this.tickHistory.shift();
+                        }
+                        
+                        // Update UI
+                        this.elements.tickPrice.textContent = price.toFixed(2);
+                        this.elements.tickDirection.textContent = `Direction: ${direction}`;
+                        
+                        // Calculate indicators if we have enough data
+                        if (this.tickHistory.length >= this.minTicks) {
+                            const smiData = this.calculateSMI();
+                            const lsmaData = this.calculateLSMA();
+                            
+                            this.updateIndicatorDisplay(smiData, lsmaData);
+                            this.evaluateStrategy(smiData, lsmaData, price);
+                        } else {
+                            const remaining = this.minTicks - this.tickHistory.length;
+                            this.elements.dataWindow.textContent = `${this.tickHistory.length}/${this.minTicks}`;
+                            this.elements.smiStatus.textContent = `Need ${remaining} more ticks`;
+                            this.elements.lsmaStatus.textContent = 'Filling buffer...';
+                        }
                     }
                 }
+            }
+
+            calculateMarketSMI(symbol) {
+                const prices = this.marketData[symbol].history;
+                const period = 10;
+                const emaPeriod1 = 3;
+                const emaPeriod2 = 3;
+                const signalPeriod = 3;
+                
+                // Find high/low over period
+                let highest = -Infinity, lowest = Infinity;
+                for (let i = prices.length - period; i < prices.length; i++) {
+                    if (prices[i] > highest) highest = prices[i];
+                    if (prices[i] < lowest) lowest = prices[i];
+                }
+                
+                const range = highest - lowest;
+                const close = prices[prices.length - 1];
+                const hl2 = (highest + lowest) / 2;
+                const relDist = range > 0 ? ((close - hl2) / (range / 2)) * 100 : 0;
+                
+                // Double EMA smoothing
+                const ema1 = this.emaCalculate(prices.slice(-(period + emaPeriod1)), emaPeriod1);
+                const ema2 = this.emaCalculate(ema1, emaPeriod2);
+                const smi = ema2[ema2.length - 1] || 0;
+                
+                // Signal line (3-period EMA of SMI)
+                const signal = this.emaCalculate([smi, smi, smi], signalPeriod)[signalPeriod - 1];
+                
+                return { smi, signal };
+            }
+
+            calculateMarketLSMA(symbol) {
+                const prices = this.marketData[symbol].history.slice(-25);
+                const n = prices.length;
+                
+                let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+                
+                for (let i = 0; i < n; i++) {
+                    sumX += i;
+                    sumY += prices[i];
+                    sumXY += i * prices[i];
+                    sumX2 += i * i;
+                }
+                
+                const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+                const currentLSMA = (sumY - slope * sumX) / n + slope * (n - 1);
+                const previousLSMA = (sumY - slope * sumX) / n + slope * (n - 2);
+                const slopeValue = currentLSMA - previousLSMA;
+                
+                return { slope: slopeValue, direction: slopeValue > 0 ? 'UP' : 'DOWN' };
             }
 
             calculateLSMA() {
@@ -1444,19 +1776,24 @@
             executeTrade(direction, price) {
                 this.isTradingLock = true;
                 
+                // Use active market symbol in multi-market mode
+                const tradeSymbol = this.isMultiMarketMode ? this.activeMarket : this.currentAsset;
+                
                 // Determine expiry based on SMI severity
                 let duration;
-                const absSmi = Math.abs(this.lastSMI);
+                const absSmi = this.isMultiMarketMode ? 
+                    Math.abs(this.marketData[tradeSymbol].smi) : 
+                    Math.abs(this.lastSMI);
                 
                 if (absSmi >= 75) {
                     duration = 6;
-                    this.log('trade', `🔥 HYPER-REVERSAL detected (SMI: ${absSmi.toFixed(1)}), using 6-tick expiry`);
+                    this.log('trade', `🔥 HYPER-REVERSAL (SMI: ${absSmi.toFixed(1)}), 6-tick expiry`);
                 } else {
                     duration = 9;
-                    this.log('trade', `📊 Standard reversal (SMI: ${absSmi.toFixed(1)}), using 9-tick expiry`);
+                    this.log('trade', `📊 Standard (SMI: ${absSmi.toFixed(1)}), 9-tick expiry`);
                 }
                 
-                this.log('trade', `${direction === 'CALL' ? '📈' : '📉'} EXECUTING ${direction} at ${price.toFixed(2)}, Stake: $${this.stakeAmount.toFixed(2)}, Expiry: ${duration} ticks`);
+                this.log('trade', `${direction === 'CALL' ? '📈' : '📉'} ${tradeSymbol} ${direction} @ ${price.toFixed(2)}, $${this.stakeAmount.toFixed(2)}, ${duration} ticks`);
                 
                 // Demo mode simulation
                 if (this.isDemoMode) {
@@ -1473,7 +1810,7 @@
                     currency: 'USD',
                     duration: duration,
                     duration_unit: 't',
-                    symbol: this.currentAsset
+                    symbol: tradeSymbol
                 };
                 
                 this.ws.send(JSON.stringify(contractRequest));
