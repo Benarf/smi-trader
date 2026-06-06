@@ -685,8 +685,13 @@
                     <!-- OAuth Login -->
                     <div class="control-section">
                         <label class="control-label">Authentication</label>
-                        <button class="btn btn-connect" id="btnLogin" style="width: 100%;">
-                            [ LOGIN WITH DERIV ]
+                        <button class="btn btn-connect" id="btnLogin" style="width: 100%; margin-bottom: 8px;">
+                            [ LOGIN WITH DERIV OAuth ]
+                        </button>
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 10px; margin: 8px 0;">- OR -</div>
+                        <input type="text" class="control-input" id="apiToken" placeholder="Paste API Token (pat_xxx...)" style="margin-bottom: 8px;">
+                        <button class="btn btn-connect" id="btnTokenLogin" style="width: 100%; background: linear-gradient(135deg, #001133, #00d4ff); border-color: var(--accent-blue);">
+                            [ USE TOKEN ]
                         </button>
                         <div id="loginStatus" style="margin-top: 10px; font-size: 11px; color: var(--accent-blue); text-align: center;"></div>
                     </div>
@@ -863,10 +868,16 @@
             }
 
             bindEvents() {
-                // Login button
+                // OAuth login button
                 const btnLogin = document.getElementById('btnLogin');
                 if (btnLogin) {
                     btnLogin.addEventListener('click', () => this.login());
+                }
+                
+                // Token login button
+                const btnTokenLogin = document.getElementById('btnTokenLogin');
+                if (btnTokenLogin) {
+                    btnTokenLogin.addEventListener('click', () => this.loginWithToken());
                 }
                 
                 this.elements.btnConnect.addEventListener('click', () => this.connect());
@@ -886,6 +897,31 @@
                 
                 // Handle OAuth callback
                 this.handleOAuthCallback();
+            }
+
+            loginWithToken() {
+                const tokenInput = document.getElementById('apiToken');
+                const token = tokenInput.value.trim();
+                
+                if (!token) {
+                    this.log('error', 'Please enter an API token');
+                    return;
+                }
+                
+                if (!token.startsWith('pat_')) {
+                    this.log('error', 'Invalid token format. Must start with "pat_"');
+                    return;
+                }
+                
+                this.token = token;
+                this.log('success', '✓ Token authentication ready!');
+                document.getElementById('loginStatus').textContent = '✓ Token Ready';
+                document.getElementById('btnLogin').style.display = 'none';
+                document.getElementById('btnTokenLogin').style.display = 'none';
+                tokenInput.style.display = 'none';
+                
+                // Auto-connect
+                this.connect();
             }
 
             login() {
