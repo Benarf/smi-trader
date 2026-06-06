@@ -808,15 +808,17 @@
             constructor() {
                 // Core Configuration - OAuth Flow
                 this.appId = '33tPkMbAScG26PBZBy1eI';
+                this.clientId = '33tPkMbAScG26PBZBy1eI'; // Same as app_id for legacy
                 this.oauthUrl = 'https://oauth.deriv.com/oauth2/authorize';
-                this.apiUrl = 'https://api.deriv.com';
+                this.tokenUrl = 'https://auth.deriv.com/oauth2/token';
                 this.wsEndpoint = 'wss://ws.deriv.com';
                 this.ws = null;
                 this.isConnected = false;
                 this.isTradingActive = false;
                 this.isTradingLock = false;
                 this.token = null;
-                this.tokenType = 'Bearer';
+                this.codeVerifier = null;
+                this.state = null;
                 
                 // Data Storage
                 this.tickHistory = [];
@@ -887,21 +889,76 @@
             }
 
             login() {
-                const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-                const authUrl = `${this.oauthUrl}?app_id=${this.appId}&response_type=token&redirect_uri=${redirectUri}`;
-                this.log('info', 'Redirecting to Deriv OAuth...');
-                window.location.href = authUrl;
+                // Generate PKCE code verifier and challenge
+                this.codeVerifier = this.generateCodeVerifier();
+                this.state = this.generateState();
+                
+                // Generate code challenge from verifier
+                this.generateCodeChallenge(this.codeVerifier).then(codeChallenge => {
+                    const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
+                    const authUrl = `${this.oauthUrl}?response_type=code&client_id=${this.clientId}&redirect_uri=${redirectUri}&scope=trade&state=${this.state}&code_challenge=${codeChallenge}&code_challenge_method=S256&app_id=${this.appId}`;
+                    
+                    this.log('info', 'Redirecting to Deriv OAuth...');
+                    window.location.href = authUrl;
+                });
+            }
+
+            generateCodeVerifier() {
+                const array = new Uint8Array(32);
+                crypto.getRandomValues(array);
+                return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+            }
+
+            generateState() {
+                return this.generateCodeVerifier().substring(0, 16);
+            }
+
+            async generateCodeChallenge(verifier) {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(verifier);
+                const hash = await crypto.subtle.digest('SHA-256', data);
+                return btoa(String.fromCharCode(...new Uint8Array(hash)))
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=/g, '');
             }
 
             handleOAuthCallback() {
-                const hash = window.location.hash;
-                if (hash && hash.includes('access_token')) {
-                    const params = new URLSearchParams(hash.substring(1));
-                    this.token = params.get('access_token');
-                    const tokenType = params.get('token_type') || 'Bearer';
+                const urlParams = new URLSearchParams(window.location.search);
+                const code = urlParams.get('code');
+                const returnedState = urlParams.get('state');
+                
+                if (code && returnedState === this.state) {
+                    this.log('info', 'Received authorization code. Trading in token...');
+                    this.exchangeCodeForToken(code);
+                } else if (urlParams.get('error')) {
+                    this.log('error', `OAuth error: ${urlParams.get('error_description')}`);
+                }
+            }
+
+            async exchangeCodeForToken(code) {
+                const redirectUri = window.location.origin + window.location.pathname;
+                
+                try {
+                    const response = await fetch(this.tokenUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: new URLSearchParams({
+                            grant_type: 'authorization_code',
+                            client_id: this.clientId,
+                            code: code,
+                            code_verifier: this.codeVerifier,
+                            redirect_uri: redirectUri
+                        })
+                    });
                     
-                    if (this.token) {
-                        this.log('success', 'OAuth authentication successful!');
+                    const data = await response.json();
+                    
+                    if (data.access_token) {
+                        this.token = data.access_token;
+                        this.log('success', '✓ OAuth authentication successful!');
                         document.getElementById('loginStatus').textContent = '✓ Connected';
                         document.getElementById('btnLogin').style.display = 'none';
                         
@@ -910,7 +967,11 @@
                         
                         // Auto-connect
                         this.connect();
+                    } else {
+                        this.log('error', `Token exchange failed: ${JSON.stringify(data)}`);
                     }
+                } catch (e) {
+                    this.log('error', `Token exchange error: ${e.message}`);
                 }
             }
 
