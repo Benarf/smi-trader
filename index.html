@@ -682,16 +682,13 @@
                         <span class="status-text" id="statusText">Disconnected</span>
                     </div>
 
-                    <!-- App ID Input -->
+                    <!-- OAuth Login -->
                     <div class="control-section">
-                        <label class="control-label">App ID</label>
-                        <input type="text" class="control-input" id="appId" value="33tNou5lfRTxAFmfBiMC7" disabled>
-                    </div>
-
-                    <!-- API Token Input -->
-                    <div class="control-section">
-                        <label class="control-label">API Personal Access Token</label>
-                        <input type="text" class="control-input" id="apiToken" value="pat_9533dc8a422e84047c6f7b374b3820a8fc73f760e7b91bd12eab123e285434a1" disabled>
+                        <label class="control-label">Authentication</label>
+                        <button class="btn btn-connect" id="btnLogin" style="width: 100%;">
+                            [ LOGIN WITH DERIV ]
+                        </button>
+                        <div id="loginStatus" style="margin-top: 10px; font-size: 11px; color: var(--accent-blue); text-align: center;"></div>
                     </div>
 
                     <!-- Stake Amount -->
@@ -809,13 +806,17 @@
 
         class TradingBot {
             constructor() {
-                // Core Configuration
-                this.appId = '33tNou5lfRTxAFmfBiMC7';
-                this.apiToken = 'pat_9533dc8a422e84047c6f7b374b3820a8fc73f760e7b91bd12eab123e285434a1';
+                // Core Configuration - OAuth Flow
+                this.appId = '33tPkMbAScG26PBZBy1eI';
+                this.oauthUrl = 'https://oauth.deriv.com/oauth2/authorize';
+                this.apiUrl = 'https://api.deriv.com';
+                this.wsEndpoint = 'wss://ws.deriv.com';
                 this.ws = null;
                 this.isConnected = false;
                 this.isTradingActive = false;
                 this.isTradingLock = false;
+                this.token = null;
+                this.tokenType = 'Bearer';
                 
                 // Data Storage
                 this.tickHistory = [];
@@ -860,6 +861,12 @@
             }
 
             bindEvents() {
+                // Login button
+                const btnLogin = document.getElementById('btnLogin');
+                if (btnLogin) {
+                    btnLogin.addEventListener('click', () => this.login());
+                }
+                
                 this.elements.btnConnect.addEventListener('click', () => this.connect());
                 this.elements.btnDisconnect.addEventListener('click', () => this.disconnect());
                 this.elements.btnClearConsole.addEventListener('click', () => this.clearConsole());
@@ -874,6 +881,37 @@
                         this.subscribeToAsset();
                     }
                 });
+                
+                // Handle OAuth callback
+                this.handleOAuthCallback();
+            }
+
+            login() {
+                const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
+                const authUrl = `${this.oauthUrl}?app_id=${this.appId}&response_type=token&redirect_uri=${redirectUri}`;
+                this.log('info', 'Redirecting to Deriv OAuth...');
+                window.location.href = authUrl;
+            }
+
+            handleOAuthCallback() {
+                const hash = window.location.hash;
+                if (hash && hash.includes('access_token')) {
+                    const params = new URLSearchParams(hash.substring(1));
+                    this.token = params.get('access_token');
+                    const tokenType = params.get('token_type') || 'Bearer';
+                    
+                    if (this.token) {
+                        this.log('success', 'OAuth authentication successful!');
+                        document.getElementById('loginStatus').textContent = '✓ Connected';
+                        document.getElementById('btnLogin').style.display = 'none';
+                        
+                        // Clean URL
+                        window.history.replaceState(null, '', window.location.pathname);
+                        
+                        // Auto-connect
+                        this.connect();
+                    }
+                }
             }
 
             log(type, message) {
@@ -917,10 +955,15 @@
             }
 
             connect() {
+                if (!this.token) {
+                    this.log('warning', 'Not authenticated. Please login first.');
+                    return;
+                }
+                
                 this.log('info', 'Initiating WebSocket connection...');
                 
-                // Try primary endpoint
-                const wsUrl = 'wss://ws.binaryws.com/websockets/v3';
+                // Use OAuth token endpoint
+                const wsUrl = `wss://ws.deriv.com/app/${this.appId}`;
                 this.log('info', `Connecting to: ${wsUrl}`);
                 
                 try {
@@ -931,11 +974,10 @@
                 }
                 
                 this.ws.onopen = () => {
-                    this.log('success', '✓ WebSocket connected. Starting handshake...');
-                    // First, get active symbols (public endpoint, no auth needed)
+                    this.log('success', '✓ WebSocket connected. Authenticating...');
+                    // Send authorize with OAuth token
                     this.ws.send(JSON.stringify({
-                        active_symbols: 'brief',
-                        product_type: 'basic',
+                        authorize: this.token,
                         req_id: 1
                     }));
                 };
@@ -943,10 +985,7 @@
                 this.ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        
-                        // Log all incoming messages for debugging
                         this.log('info', `Received: ${data.msg_type || 'unknown'}`);
-                        
                         this.routeMessage(data);
                     } catch (e) {
                         this.log('error', `Failed to parse message: ${e.message}`);
@@ -956,27 +995,12 @@
                 this.ws.onerror = (error) => {
                     this.log('error', 'WebSocket error occurred.');
                     console.error('WebSocket Error:', error);
-                    if (error.target) {
-                        this.log('error', `ReadyState: ${error.target.readyState}`);
-                        this.log('error', `URL: ${error.target.url}`);
-                    }
                 };
                 
                 this.ws.onclose = (event) => {
-                    this.log('warning', `Connection closed. Code: ${event.code}, Reason: ${event.reason || 'none'}`);
+                    this.log('warning', `Connection closed. Code: ${event.code}`);
                     this.updateConnectionStatus(false);
                     this.stopHeartbeat();
-                    
-                    // Only auto-reconnect a few times
-                    if (!this.reconnectAttempts) this.reconnectAttempts = 0;
-                    this.reconnectAttempts++;
-                    
-                    if (this.reconnectAttempts <= 3) {
-                        this.log('info', `Reconnecting in 5s... (attempt ${this.reconnectAttempts}/3)`);
-                        setTimeout(() => this.connect(), 5000);
-                    } else {
-                        this.log('error', 'Max reconnect attempts reached. Please manually reconnect.');
-                    }
                 };
             }
 
@@ -1054,6 +1078,9 @@
                 } else if (msg.error) {
                     this.log('error', `Authorization failed: ${msg.error.message}`);
                     this.log('error', `Error code: ${msg.error.code}`);
+                    // Show login button again
+                    document.getElementById('btnLogin').style.display = 'block';
+                    document.getElementById('loginStatus').textContent = '✗ Failed';
                 }
             }
 
