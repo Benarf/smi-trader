@@ -682,16 +682,12 @@
                         <span class="status-text" id="statusText">Disconnected</span>
                     </div>
 
-                    <!-- OAuth Login -->
+                    <!-- API Token Login -->
                     <div class="control-section">
-                        <label class="control-label">Authentication</label>
-                        <button class="btn btn-connect" id="btnLogin" style="width: 100%; margin-bottom: 8px;">
-                            [ LOGIN WITH DERIV OAuth ]
-                        </button>
-                        <div style="text-align: center; color: var(--text-secondary); font-size: 10px; margin: 8px 0;">- OR -</div>
-                        <input type="text" class="control-input" id="apiToken" placeholder="Paste API Token (pat_xxx...)" style="margin-bottom: 8px;">
-                        <button class="btn btn-connect" id="btnTokenLogin" style="width: 100%; background: linear-gradient(135deg, #001133, #00d4ff); border-color: var(--accent-blue);">
-                            [ USE TOKEN ]
+                        <label class="control-label">API Token</label>
+                        <input type="password" class="control-input" id="apiTokenField" placeholder="Paste your Deriv API Token (pat_xxx...)" style="margin-bottom: 8px;">
+                        <button class="btn btn-connect" id="btnLogin" style="width: 100%;">
+                            [ CONNECT BOT ]
                         </button>
                         <div id="loginStatus" style="margin-top: 10px; font-size: 11px; color: var(--accent-blue); text-align: center;"></div>
                     </div>
@@ -811,19 +807,14 @@
 
         class TradingBot {
             constructor() {
-                // Core Configuration - OAuth Flow
-                this.appId = '33tPkMbAScG26PBZBy1eI';
-                this.clientId = '33tPkMbAScG26PBZBy1eI'; // Same as app_id for legacy
-                this.oauthUrl = 'https://oauth.deriv.com/oauth2/authorize';
-                this.tokenUrl = 'https://auth.deriv.com/oauth2/token';
-                this.wsEndpoint = 'wss://ws.deriv.com';
+                // Core Configuration
+                this.appId = '1089'; // Default Deriv app_id
+                this.wsEndpoint = 'wss://ws.derivws.com/websockets/v3';
                 this.ws = null;
                 this.isConnected = false;
                 this.isTradingActive = false;
                 this.isTradingLock = false;
                 this.token = null;
-                this.codeVerifier = null;
-                this.state = null;
                 
                 // Data Storage
                 this.tickHistory = [];
@@ -868,16 +859,10 @@
             }
 
             bindEvents() {
-                // OAuth login button
+                // Login button - connects with API token
                 const btnLogin = document.getElementById('btnLogin');
                 if (btnLogin) {
-                    btnLogin.addEventListener('click', () => this.login());
-                }
-                
-                // Token login button
-                const btnTokenLogin = document.getElementById('btnTokenLogin');
-                if (btnTokenLogin) {
-                    btnTokenLogin.addEventListener('click', () => this.loginWithToken());
+                    btnLogin.addEventListener('click', () => this.connectWithToken());
                 }
                 
                 this.elements.btnConnect.addEventListener('click', () => this.connect());
@@ -895,16 +880,19 @@
                     }
                 });
                 
-                // Handle OAuth callback
-                this.handleOAuthCallback();
+                // Auto-populate saved token
+                const savedToken = localStorage.getItem('saved_deriv_token');
+                if (savedToken) {
+                    document.getElementById('apiTokenField').value = savedToken;
+                }
             }
 
-            loginWithToken() {
-                const tokenInput = document.getElementById('apiToken');
+            connectWithToken() {
+                const tokenInput = document.getElementById('apiTokenField');
                 const token = tokenInput.value.trim();
                 
                 if (!token) {
-                    this.log('error', 'Please enter an API token');
+                    this.log('error', 'Please paste a valid API token first.');
                     return;
                 }
                 
@@ -913,102 +901,15 @@
                     return;
                 }
                 
+                // Save token for page refresh persistence
+                localStorage.setItem('saved_deriv_token', token);
                 this.token = token;
-                this.log('success', '✓ Token authentication ready!');
-                document.getElementById('loginStatus').textContent = '✓ Token Ready';
-                document.getElementById('btnLogin').style.display = 'none';
-                document.getElementById('btnTokenLogin').style.display = 'none';
-                tokenInput.style.display = 'none';
                 
-                // Auto-connect
+                document.getElementById('loginStatus').textContent = '✓ Token Saved';
+                this.log('info', 'Connecting to Deriv...');
+                
+                // Connect WebSocket
                 this.connect();
-            }
-
-            login() {
-                // Generate PKCE code verifier and challenge
-                this.codeVerifier = this.generateCodeVerifier();
-                this.state = this.generateState();
-                
-                // Generate code challenge from verifier
-                this.generateCodeChallenge(this.codeVerifier).then(codeChallenge => {
-                    const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
-                    const authUrl = `${this.oauthUrl}?response_type=code&client_id=${this.clientId}&redirect_uri=${redirectUri}&scope=trade&state=${this.state}&code_challenge=${codeChallenge}&code_challenge_method=S256&app_id=${this.appId}`;
-                    
-                    this.log('info', 'Redirecting to Deriv OAuth...');
-                    window.location.href = authUrl;
-                });
-            }
-
-            generateCodeVerifier() {
-                const array = new Uint8Array(32);
-                crypto.getRandomValues(array);
-                return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-            }
-
-            generateState() {
-                return this.generateCodeVerifier().substring(0, 16);
-            }
-
-            async generateCodeChallenge(verifier) {
-                const encoder = new TextEncoder();
-                const data = encoder.encode(verifier);
-                const hash = await crypto.subtle.digest('SHA-256', data);
-                return btoa(String.fromCharCode(...new Uint8Array(hash)))
-                    .replace(/\+/g, '-')
-                    .replace(/\//g, '_')
-                    .replace(/=/g, '');
-            }
-
-            handleOAuthCallback() {
-                const urlParams = new URLSearchParams(window.location.search);
-                const code = urlParams.get('code');
-                const returnedState = urlParams.get('state');
-                
-                if (code && returnedState === this.state) {
-                    this.log('info', 'Received authorization code. Trading in token...');
-                    this.exchangeCodeForToken(code);
-                } else if (urlParams.get('error')) {
-                    this.log('error', `OAuth error: ${urlParams.get('error_description')}`);
-                }
-            }
-
-            async exchangeCodeForToken(code) {
-                const redirectUri = window.location.origin + window.location.pathname;
-                
-                try {
-                    const response = await fetch(this.tokenUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        body: new URLSearchParams({
-                            grant_type: 'authorization_code',
-                            client_id: this.clientId,
-                            code: code,
-                            code_verifier: this.codeVerifier,
-                            redirect_uri: redirectUri
-                        })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.access_token) {
-                        this.token = data.access_token;
-                        this.log('success', '✓ OAuth authentication successful!');
-                        document.getElementById('loginStatus').textContent = '✓ Connected';
-                        document.getElementById('btnLogin').style.display = 'none';
-                        
-                        // Clean URL
-                        window.history.replaceState(null, '', window.location.pathname);
-                        
-                        // Auto-connect
-                        this.connect();
-                    } else {
-                        this.log('error', `Token exchange failed: ${JSON.stringify(data)}`);
-                    }
-                } catch (e) {
-                    this.log('error', `Token exchange error: ${e.message}`);
-                }
             }
 
             log(type, message) {
@@ -1059,9 +960,9 @@
                 
                 this.log('info', 'Initiating WebSocket connection...');
                 
-                // Use OAuth token endpoint
-                const wsUrl = `wss://ws.deriv.com/app/${this.appId}`;
-                this.log('info', `Connecting to: ${wsUrl}`);
+                // Use standard Deriv WebSocket endpoint
+                const wsUrl = `${this.wsEndpoint}?app_id=${this.appId}&l=en`;
+                this.log('info', `Connecting to: ${this.wsEndpoint}`);
                 
                 try {
                     this.ws = new WebSocket(wsUrl);
@@ -1071,18 +972,13 @@
                 }
                 
                 this.ws.onopen = () => {
-                    this.log('success', '✓ WebSocket connected. Authenticating...');
-                    // Send authorize with OAuth token
-                    this.ws.send(JSON.stringify({
-                        authorize: this.token,
-                        req_id: 1
-                    }));
+                    this.log('success', '✓ WebSocket connected. Authorizing token...');
+                    this.ws.send(JSON.stringify({ authorize: this.token }));
                 };
                 
                 this.ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        this.log('info', `Received: ${data.msg_type || 'unknown'}`);
                         this.routeMessage(data);
                     } catch (e) {
                         this.log('error', `Failed to parse message: ${e.message}`);
