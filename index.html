@@ -779,7 +779,7 @@
 
                     <!-- Multi-Market Display -->
                     <div class="control-section" id="multiMarketSection" style="display: none;">
-                        <label class="control-label">Scanning 18 Markets</label>
+                        <label class="control-label">Scanning 10 Markets</label>
                         <div id="tickersContainer" style="max-height: 180px; overflow-y: auto; font-size: 10px; background: var(--bg-primary); border-radius: 2px; padding: 8px;"></div>
                         <div id="activeSignal" style="display: none; margin-top: 10px; padding: 8px; background: var(--bg-primary); border: 1px solid var(--accent-yellow); border-radius: 2px; text-align: center;">
                             <div style="font-size: 10px; color: var(--accent-yellow);">⚡ SIGNAL DETECTED</div>
@@ -903,10 +903,8 @@
                 
                 // Multi-Market State
                 this.markets = [
-                    'R_100', 'R_75', 'R_50', 'R_25', 'R_10',
                     '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V',
-                    'JD10', 'JD25', 'JD50', 'JD75', 'JD100',
-                    'R_25HJ', 'R_50HJ', 'R_75HJ', 'R_100HJ'
+                    'JD10', 'JD25', 'JD50', 'JD75', 'JD100'
                 ];
                 this.marketData = {}; // { symbol: { price, smi, signal, slope, history, lastSMI, lastSignal } }
                 this.signalQueue = []; // Pending signals from all markets
@@ -1025,7 +1023,7 @@
 
             setMultiMarketMode() {
                 this.isMultiMarketMode = true;
-                document.getElementById('modeIndicator').textContent = 'AUTO SCAN MODE - 18 Markets';
+                document.getElementById('modeIndicator').textContent = 'AUTO SCAN MODE - 10 Markets';
                 document.getElementById('modeIndicator').style.color = 'var(--accent-yellow)';
                 document.getElementById('singleMarketSection').style.display = 'none';
                 document.getElementById('multiMarketSection').style.display = 'block';
@@ -1034,7 +1032,7 @@
                 this.initMarketData();
                 this.renderMarketTickers();
                 this.log('success', '═══════════════════════════════════════');
-                this.log('success', '  AUTO SCAN MODE - 18 Markets');
+                this.log('success', '  AUTO SCAN MODE - 10 Markets');
                 this.log('info', '  Scanning all markets for signals');
                 this.log('success', '═══════════════════════════════════════');
                 
@@ -1189,7 +1187,7 @@
                 this.log('success', '═══════════════════════════════════════');
                 this.log('success', '  DEMO MODE - Virtual Funds Active');
                 this.log('info', `  Balance: $${this.demoBalance.toFixed(2)}`);
-                this.log('info', `  Mode: ${this.isMultiMarketMode ? 'AUTO SCAN (18 Markets)' : this.currentAsset}`);
+                this.log('info', `  Mode: ${this.isMultiMarketMode ? 'AUTO SCAN (10 Markets)' : this.currentAsset}`);
                 this.log('success', '═══════════════════════════════════════');
                 
                 // Start simulated tick stream
