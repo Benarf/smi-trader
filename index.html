@@ -1805,7 +1805,7 @@
             evaluateStrategy(smiData, lsmaData, currentPrice) {
                 if (!this.isTradingActive || this.isTradingLock) return;
                 
-                // Relaxed Anti-Whipsaw: Skip only if market is completely flat
+                // Skip if market is flat
                 if (lsmaData.isFlat) {
                     this.log('warning', 'Market flat - skipping trade');
                     return;
@@ -1820,12 +1820,16 @@
                 const smiCrossedUp = smi > signal && this.lastSMI <= this.lastSignal;
                 const smiCrossedDown = smi < signal && this.lastSMI >= this.lastSignal;
                 
-                // CALL: LSMA UP + SMI crosses above Signal (widened from ±50-100 to ±20-100)
-                if (lsmaUp && smiCrossedUp && smi < -20 && smi > -100) {
+                // Calculate momentum: distance from centerline
+                const momentum = Math.abs(smi - signal);
+                
+                // Improved filter: Require momentum confirmation
+                // CALL: LSMA UP + SMI crosses above Signal + strong momentum + in oversold zone
+                if (lsmaUp && smiCrossedUp && smi < -30 && smi > -100 && momentum > 15) {
                     this.executeTrade('CALL', currentPrice);
                 }
-                // PUT: LSMA DOWN + SMI crosses below Signal (widened from ±50-100 to ±20-100)
-                else if (lsmaDown && smiCrossedDown && smi > 20 && smi < 100) {
+                // PUT: LSMA DOWN + SMI crosses below Signal + strong momentum + in overbought zone
+                else if (lsmaDown && smiCrossedDown && smi > 30 && smi < 100 && momentum > 15) {
                     this.executeTrade('PUT', currentPrice);
                 }
             }
@@ -1842,12 +1846,12 @@
                     Math.abs(this.marketData[tradeSymbol].smi) : 
                     Math.abs(this.lastSMI);
                 
-                if (absSmi >= 60) {
-                    duration = 3;  // Reduced from 6 for faster trade cycles
-                    this.log('trade', `🔥 HYPER-REVERSAL (SMI: ${absSmi.toFixed(1)}), 3-tick expiry`);
+                if (absSmi >= 80) {
+                    duration = 10;
+                    this.log('trade', `🔥 STRONG SIGNAL (SMI: ${absSmi.toFixed(1)}), 10-tick expiry`);
                 } else {
-                    duration = 5;  // Reduced from 9 for faster trade cycles
-                    this.log('trade', `📊 Standard (SMI: ${absSmi.toFixed(1)}), 5-tick expiry`);
+                    duration = 10;
+                    this.log('trade', `📊 Standard (SMI: ${absSmi.toFixed(1)}), 10-tick expiry`);
                 }
                 
                 this.log('trade', `${direction === 'CALL' ? '📈' : '📉'} ${tradeSymbol} ${direction} @ ${price.toFixed(2)}, $${this.stakeAmount.toFixed(2)}, ${duration} ticks`);
@@ -1876,6 +1880,12 @@
                         buy: proposal.id,
                         price: this.stakeAmount
                     }));
+                }
+            }
+
+            handleBuy(buy) {
+                if (buy && buy.contract_id) {
+                    this.log('trade', `Contract bought: ${buy.contract_id}`);
                 }
             }
 
