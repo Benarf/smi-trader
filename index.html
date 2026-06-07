@@ -1361,11 +1361,24 @@
                     case 'proposal':
                         this.handleProposal(msg);
                         break;
+                    case 'balance':
+                        this.handleBalance(msg);
+                        break;
                     case 'error':
                         this.log('error', `API Error: ${msg.error?.message || 'Unknown error'}`);
                         break;
                     default:
                         break;
+                }
+            }
+
+            handleBalance(msg) {
+                if (msg.balance && msg.balance.balance !== undefined) {
+                    this.balance = msg.balance.balance;
+                    if (this.elements.balance) {
+                        this.elements.balance.textContent = `$${this.balance.toFixed(2)}`;
+                    }
+                    this.log('info', `Balance: $${this.balance.toFixed(2)}`);
                 }
             }
 
@@ -1894,17 +1907,29 @@
                     const contract = msg.proposal_open_contract;
                     
                     if (contract.is_sold) {
-                        const pnl = contract.profit_win || contract.profit_loss || 0;
+                        const pnl = contract.profit_win !== undefined ? contract.profit_win : (contract.profit_loss || 0);
                         this.netProfit += pnl;
                         this.tradeCount++;
                         
                         const result = pnl >= 0 ? 'WIN' : 'LOSS';
                         this.log('trade', `🏁 Contract ${result}: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`);
                         
-                        // Update P/L display
-                        this.elements.netProfit.textContent = `${pnl >= 0 ? '$' : '-$'}${Math.abs(this.netProfit).toFixed(2)}`;
-                        this.elements.netProfit.className = `stat-value ${pnl >= 0 ? 'green' : 'red'}`;
+                        // Update P/L display (use netProfit for sign)
+                        const netSign = this.netProfit >= 0 ? '$' : '-$';
+                        this.elements.netProfit.textContent = `${netSign}${Math.abs(this.netProfit).toFixed(2)}`;
+                        this.elements.netProfit.className = `stat-value ${this.netProfit >= 0 ? 'green' : 'red'}`;
                         this.elements.tradeCount.textContent = `${this.tradeCount} trades`;
+                        
+                        // Update balance from contract if available
+                        if (contract.balance_after !== undefined) {
+                            this.balance = contract.balance_after;
+                            if (this.elements.balance) {
+                                this.elements.balance.textContent = `$${this.balance.toFixed(2)}`;
+                            }
+                        } else {
+                            // Request balance update
+                            this.ws.send(JSON.stringify({ balance: 1 }));
+                        }
                         
                         // Release lock
                         this.isTradingLock = false;
