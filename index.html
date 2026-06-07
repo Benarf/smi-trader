@@ -1861,7 +1861,7 @@
                     currency: 'USD',
                     duration: duration,
                     duration_unit: 't',
-                    underlying_symbol: tradeSymbol
+                    underlying_underlying_symbol: tradeSymbol
                 };
                 
                 this.log('info', `Sending proposal for ${tradeSymbol}...`);
@@ -1869,11 +1869,11 @@
             }
 
             handleProposal(msg) {
-                if (msg.proposal) {
-                    this.log('trade', `Proposal received: ${msg.proposal.id}`);
-                    // Accept the proposal
+                const proposal = msg.proposal || msg;
+                if (proposal && proposal.id) {
+                    this.log('trade', `Proposal received: ${proposal.id}`);
                     this.ws.send(JSON.stringify({
-                        buy: msg.proposal.id,
+                        buy: proposal.id,
                         price: this.stakeAmount
                     }));
                 }
