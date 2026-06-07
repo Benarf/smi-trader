@@ -1364,6 +1364,12 @@
                     case 'balance':
                         this.handleBalance(msg);
                         break;
+                    case 'ohlc':
+                        this.handleOHLC(msg);
+                        break;
+                    case 'candles':
+                        this.handleOHLC(msg);
+                        break;
                     case 'error':
                         this.log('error', `API Error: ${msg.error?.message || 'Unknown error'}`);
                         break;
@@ -1818,6 +1824,9 @@
             activeEngine: 1,
             tickCache: [],
             candleCache: [],
+            ohlcChartData: [], // 1 day of OHLC for charting
+            chartCanvas: null,
+            chartCtx: null,
             recoveryEnabled: false,
             consecutiveLosses: 0,
             maxRecoveryStake: 10,
@@ -1841,6 +1850,9 @@
                 this.activeEngine = num;
                 this.tickCache = [];
                 this.candleCache = [];
+                if (num === 2) {
+                    this.subscribeOHLC();
+                }
                 this.log('info', `🔄 Switched to Engine ${num} (${num === 1 ? 'Tick-Based' : 'Candle-Based'})`);
             },
             
@@ -1875,11 +1887,19 @@
                 }
             },
             
-            // Engine 2: Candle-based
+            // Engine 2: Candle-based with OHLC subscription
             evaluateOneMinuteStrategy(candle) {
+                // Add to strategy cache
                 this.candleCache.push(candle);
                 if (this.candleCache.length > 100) this.candleCache.shift();
                 if (this.candleCache.length < 40) return;
+                
+                // Add to OHLC chart data (keep 1 day = ~1440 candles at 1 min)
+                this.ohlcChartData.push(candle);
+                if (this.ohlcChartData.length > 1440) this.ohlcChartData.shift();
+                
+                // Draw chart if canvas exists
+                this.drawOHLCChart();
                 
                 const candles = this.candleCache;
                 const asset = this.currentAsset || 'R_50';
@@ -1904,6 +1924,101 @@
                 } else if (lsma.direction === 'DOWN' && crossedDown && smi.line > 50) {
                     const dur = Math.abs(smi.line) >= 75 ? 2 : 5;
                     this.execTradeRecovery('PUT', candle.close, dur, 'm');
+                }
+            },
+            
+            // Subscribe to 1-minute OHLC candles
+            subscribeOHLC() {
+                const symbol = this.isMultiMarketMode ? this.activeMarket : this.currentAsset;
+                if (!symbol) return;
+                
+                this.ws.send(JSON.stringify({
+                    ohlc: 1,
+                    subscribe: 1,
+                    adjust_image: 1,
+                    style: 'candles',
+                    underlying_symbol: symbol,
+                    granularity: 60 // 1 minute
+                }));
+                this.log('info', `📊 Subscribed to OHLC: ${symbol} (1min candles)`);
+            },
+            
+            // Handle OHLC data
+            handleOHLC(msg) {
+                if (msg.ohlc && msg.ohlc.open !== undefined) {
+                    const candle = {
+                        time: msg.ohlc.open_time || Date.now(),
+                        open: msg.ohlc.open,
+                        high: msg.ohlc.high,
+                        low: msg.ohlc.low,
+                        close: msg.ohlc.close
+                    };
+                    
+                    // Update chart data
+                    if (this.activeEngine === 2) {
+                        this.evaluateOneMinuteStrategy(candle);
+                    } else {
+                        this.ohlcChartData.push(candle);
+                        if (this.ohlcChartData.length > 1440) this.ohlcChartData.shift();
+                    }
+                }
+            },
+            
+            // Draw OHLC chart
+            drawOHLCChart() {
+                if (!this.chartCtx || this.ohlcChartData.length < 2) return;
+                
+                const ctx = this.chartCtx;
+                const canvas = this.chartCanvas;
+                const data = this.ohlcChartData.slice(-200); // Last 200 candles
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                const padding = 40;
+                const chartW = canvas.width - padding * 2;
+                const chartH = canvas.height - padding * 2;
+                
+                // Find price range
+                let minP = Infinity, maxP = -Infinity;
+                data.forEach(c => {
+                    minP = Math.min(minP, c.low);
+                    maxP = Math.max(maxP, c.high);
+                });
+                const priceRange = maxP - minP || 1;
+                
+                const candleW = chartW / data.length;
+                
+                // Draw candles
+                data.forEach((c, i) => {
+                    const x = padding + i * candleW;
+                    const yTop = padding + (1 - (c.high - minP) / priceRange) * chartH;
+                    const yBottom = padding + (1 - (c.low - minP) / priceRange) * chartH;
+                    const yOpen = padding + (1 - (c.open - minP) / priceRange) * chartH;
+                    const yClose = padding + (1 - (c.close - minP) / priceRange) * chartH;
+                    
+                    const isGreen = c.close >= c.open;
+                    ctx.strokeStyle = isGreen ? '#00ff00' : '#ff0000';
+                    ctx.fillStyle = isGreen ? '#00ff00' : '#ff0000';
+                    
+                    // Wick
+                    ctx.beginPath();
+                    ctx.moveTo(x + candleW/2, yTop);
+                    ctx.lineTo(x + candleW/2, yBottom);
+                    ctx.stroke();
+                    
+                    // Body
+                    const bodyTop = Math.min(yOpen, yClose);
+                    const bodyH = Math.abs(yClose - yOpen) || 2;
+                    ctx.fillRect(x + 1, bodyTop, candleW - 2, bodyH);
+                });
+            },
+            
+            // Initialize chart canvas
+            initChartCanvas(canvasId) {
+                const canvas = document.getElementById(canvasId);
+                if (canvas) {
+                    this.chartCanvas = canvas;
+                    this.chartCtx = canvas.getContext('2d');
                 }
             },
             
