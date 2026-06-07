@@ -698,6 +698,15 @@
 
                     <!-- API Token Login (Live Mode) -->
                     <div class="control-section" id="liveAuthSection" style="display: none;">
+                        <!-- Demo/Real Toggle -->
+                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                            <button class="btn" id="btnDemoAccount" onclick="bot.toggleDemoMode(true)" style="flex: 1; background: linear-gradient(135deg, #001133, #00d4ff); border-color: var(--accent-blue);">
+                                DEMO
+                            </button>
+                            <button class="btn" id="btnRealAccount" onclick="bot.toggleDemoMode(false)" style="flex: 1; background: linear-gradient(135deg, #1a1a1a, #333); border-color: #666;">
+                                REAL
+                            </button>
+                        </div>
                         <label class="control-label">API Token</label>
                         <input type="password" class="control-input" id="apiTokenField" placeholder="Paste your Deriv API Token (pat_xxx...)" style="margin-bottom: 8px;">
                         <button class="btn btn-connect" id="btnLogin" style="width: 100%;">
@@ -711,6 +720,14 @@
                         <label class="control-label">Demo Balance</label>
                         <div style="font-family: 'Fira Code', monospace; font-size: 24px; color: var(--accent-green); text-align: center; text-shadow: var(--glow-green);">
                             $<span id="demoBalance">10,000.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Live Balance Display -->
+                    <div class="control-section" id="liveBalanceSection" style="display: none;">
+                        <label class="control-label">Account Balance</label>
+                        <div style="font-family: 'Fira Code', monospace; font-size: 24px; color: var(--accent-blue); text-align: center; text-shadow: var(--glow-blue);">
+                            $<span id="liveBalance">0.00</span>
                         </div>
                     </div>
 
@@ -931,7 +948,8 @@
                     lsmaStatus: document.getElementById('lsmaStatus'),
                     netProfit: document.getElementById('netProfit'),
                     tradeCount: document.getElementById('tradeCount'),
-                    dataWindow: document.getElementById('dataWindow')
+                    dataWindow: document.getElementById('dataWindow'),
+                    balance: document.getElementById('liveBalance')
                 };
                 
                 this.bindEvents();
@@ -1424,13 +1442,20 @@
                 
                 if (msg.authorize) {
                     this.log(`Authorized! Balance: $${msg.authorize.balance.toFixed(2)}`, 'success');
+                    this.balance = msg.authorize.balance;
+                    if (this.elements.balance) {
+                        this.elements.balance.textContent = `$${this.balance.toFixed(2)}`;
+                    }
                     this.updateConnectionStatus(true);
+                    this.startHeartbeat();
+                    this.subscribeToAsset();
                     return;
                 }
                 
                 // Handle ticks
                 if (msg.tick) {
-                    this.routeMessage(msg);
+                    this.handleTick(msg);
+                    return;
                 }
                 
                 // Proposals
@@ -1510,6 +1535,29 @@
                 this.handleConnect();
             }
 
+            toggleDemoMode(isDemo) {
+                this.isDemoMode = isDemo;
+                
+                const btnDemo = document.getElementById('btnDemoAccount');
+                const btnReal = document.getElementById('btnRealAccount');
+                
+                if (btnDemo && btnReal) {
+                    if (isDemo) {
+                        btnDemo.style.boxShadow = '0 0 10px #00d4ff';
+                        btnDemo.style.borderColor = 'var(--accent-blue)';
+                        btnReal.style.boxShadow = 'none';
+                        btnReal.style.borderColor = '#666';
+                    } else {
+                        btnReal.style.boxShadow = '0 0 10px #00ff41';
+                        btnReal.style.borderColor = 'var(--accent-green)';
+                        btnDemo.style.boxShadow = 'none';
+                        btnDemo.style.borderColor = 'var(--accent-blue)';
+                    }
+                }
+                
+                this.log('info', `Account mode: ${isDemo ? 'DEMO' : 'REAL'}`);
+            }
+
             log(type, message) {
                 const console = this.elements.console;
                 const time = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -1539,6 +1587,12 @@
                     btnConnect.disabled = true;
                     btnDisconnect.disabled = false;
                     strategyToggle.disabled = false;
+                    
+                    // Show live balance section, hide demo
+                    const liveBalanceSection = document.getElementById('liveBalanceSection');
+                    const demoBalanceSection = document.getElementById('demoBalanceSection');
+                    if (liveBalanceSection) liveBalanceSection.style.display = 'block';
+                    if (demoBalanceSection) demoBalanceSection.style.display = 'none';
                 } else {
                     statusDot.classList.remove('connected');
                     statusText.textContent = 'Disconnected';
@@ -1547,6 +1601,10 @@
                     strategyToggle.disabled = true;
                     strategyToggle.checked = false;
                     this.isTradingActive = false;
+                    
+                    // Hide live balance section
+                    const liveBalanceSection = document.getElementById('liveBalanceSection');
+                    if (liveBalanceSection) liveBalanceSection.style.display = 'none';
                 }
             }
 
@@ -1614,14 +1672,14 @@
 
             subscribeToAsset() {
                 this.log('info', `Subscribing to ${this.currentAsset}...`);
-                this.ws.send(JSON.stringify({
+                this.send({
                     ticks: this.currentAsset,
                     subscribe: 1
-                }));
-                this.ws.send(JSON.stringify({
+                });
+                this.send({
                     proposal_open_contract: 1,
                     subscribe: 1
-                }));
+                });
             }
 
             handleTick(msg) {
@@ -2030,6 +2088,7 @@
 
         // Initialize Bot
         const bot = new TradingBot();
+        bot.toggleDemoMode(true); // Default to demo mode
     </script>
 </body>
 </html>
