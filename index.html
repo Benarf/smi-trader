@@ -1157,7 +1157,7 @@
                 
                 // REST auth
                 const appId = '33sEWv7UCpSUcxNnAgfi1';
-                const API_BASE = 'https://api.derivws.com';
+                const API_BASE = 'https://api.deriv.com';
                 
                 try {
                     const createRes = await fetch(`${API_BASE}/trading/v1/options/accounts`, {
@@ -1861,7 +1861,7 @@
                     currency: 'USD',
                     duration: duration,
                     duration_unit: 't',
-                    symbol: tradeSymbol
+                    underlying_symbol: tradeSymbol
                 };
                 
                 this.log('info', `Sending proposal for ${tradeSymbol}...`);
