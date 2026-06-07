@@ -1837,11 +1837,11 @@
                 
                 // Improved filter: Require momentum confirmation
                 // CALL: LSMA UP + SMI crosses above Signal + strong momentum + in oversold zone
-                if (lsmaUp && smiCrossedUp && smi < -30 && smi > -100 && momentum > 15) {
+                if (lsmaUp && smiCrossedUp && smi <= -10 && smi >= -50 && momentum > 5) {
                     this.executeTrade('CALL', currentPrice);
                 }
                 // PUT: LSMA DOWN + SMI crosses below Signal + strong momentum + in overbought zone
-                else if (lsmaDown && smiCrossedDown && smi > 30 && smi < 100 && momentum > 15) {
+                else if (lsmaDown && smiCrossedDown && smi >= 10 && smi <= 50 && momentum > 5) {
                     this.executeTrade('PUT', currentPrice);
                 }
             }
