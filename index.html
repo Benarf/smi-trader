@@ -682,6 +682,20 @@
                         <span class="status-text" id="statusText">Disconnected</span>
                     </div>
 
+                    <!-- Account Type Toggle -->
+                    <div class="control-section">
+                        <label class="control-label">Account Type</label>
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <button class="btn" id="btnDemoAccount" onclick="bot.toggleAccountType(true)" style="flex: 1; background: linear-gradient(135deg, #001133, #00d4ff); border-color: var(--accent-blue);">
+                                DEMO
+                            </button>
+                            <button class="btn" id="btnRealAccount" onclick="bot.toggleAccountType(false)" style="flex: 1; background: linear-gradient(135deg, #1a1a1a, #333); border-color: #666;">
+                                REAL
+                            </button>
+                        </div>
+                        <div id="accountTypeStatus" style="margin-top: 8px; font-size: 11px; color: var(--accent-blue); text-align: center;"></div>
+                    </div>
+
                     <!-- API Token Login -->
                     <div class="control-section" id="liveAuthSection">
                         <label class="control-label">API Token</label>
@@ -861,6 +875,9 @@
                 this.isTradingActive = false;
                 this.isTradingLock = false;
                 this.token = null;
+                
+                // Account Type: true for demo, false for real
+                this.isDemoAccount = true;
                 
                 // Mode
                 this.isMultiMarketMode = false;
@@ -1152,7 +1169,7 @@
                         },
                         body: JSON.stringify({
                             currency: 'USD',
-                            account_type: 'real',
+                            account_type: this.isDemoAccount ? 'demo' : 'real',
                             group: 'row'
                         })
                     });
@@ -1171,7 +1188,7 @@
                         this.log(`Balance: $${data.data.balance.toFixed(2)}`, 'success');
                     }
                     
-                    const accountId = data?.data?.account_id || 'real';
+                    const accountId = data?.data?.account_id || (this.isDemoAccount ? 'demo' : 'real');
                     
                     const otpRes = await fetch(`${API_BASE}/trading/v1/options/accounts/${accountId}/otp`, {
                         method: 'POST',
@@ -1370,6 +1387,32 @@
             connectWithToken() {
                 // Use the new async handleConnect method
                 this.handleConnect();
+            }
+
+            toggleAccountType(isDemo) {
+                this.isDemoAccount = isDemo;
+                
+                const btnDemo = document.getElementById('btnDemoAccount');
+                const btnReal = document.getElementById('btnRealAccount');
+                const statusEl = document.getElementById('accountTypeStatus');
+                
+                if (btnDemo && btnReal) {
+                    if (isDemo) {
+                        btnDemo.style.boxShadow = '0 0 10px #00d4ff';
+                        btnDemo.style.borderColor = 'var(--accent-blue)';
+                        btnReal.style.boxShadow = 'none';
+                        btnReal.style.borderColor = '#666';
+                        if (statusEl) statusEl.textContent = 'Using DEMO account';
+                    } else {
+                        btnReal.style.boxShadow = '0 0 10px #00ff41';
+                        btnReal.style.borderColor = 'var(--accent-green)';
+                        btnDemo.style.boxShadow = 'none';
+                        btnDemo.style.borderColor = 'var(--accent-blue)';
+                        if (statusEl) statusEl.textContent = 'Using REAL account';
+                    }
+                }
+                
+                this.log('info', `Account type: ${isDemo ? 'DEMO' : 'REAL'}`);
             }
 
             log(type, message) {
@@ -1872,6 +1915,7 @@
 
         // Initialize Bot
         const bot = new TradingBot();
+        bot.toggleAccountType(true); // Default to demo account
     </script>
 </body>
 </html>
