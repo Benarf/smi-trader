@@ -1351,7 +1351,16 @@
                         })
                     });
                     
-                    const data = await createRes.json();
+                    let data;
+                    const text = await createRes.text();
+                    try {
+                        data = JSON.parse(text);
+                    } catch (e) {
+                        this.log('warn', 'REST auth response not JSON, using direct connect');
+                        this.connectDirect(token);
+                        return;
+                    }
+                    
                     if (data?.data?.balance !== undefined) {
                         this.log(`Balance: $${data.data.balance.toFixed(2)}`, 'success');
                     }
@@ -1363,9 +1372,18 @@
                         headers: { 'Authorization': `Bearer ${token}`, 'Deriv-App-ID': appId }
                     });
                     
-                    const otpData = await otpRes.json();
+                    let otpData;
+                    const otpText = await otpRes.text();
+                    try {
+                        otpData = JSON.parse(otpText);
+                    } catch (e) {
+                        this.log('warn', 'OTP response not JSON, using direct connect');
+                        this.connectDirect(token);
+                        return;
+                    }
+                    
                     if (otpData?.data?.url) {
-                        this.connectWS(otpData.data.url);
+                        this.connectWS(otpData.data.url, token);
                     } else {
                         this.connectDirect(token);
                     }
@@ -1375,22 +1393,25 @@
                 }
             }
 
-            connectWS(url) {
+            connectWS(url, token) {
                 if (this.ws) this.ws.close();
-                this.log('Connecting...');
+                this.log('Connecting via OTP...');
                 this.ws = new WebSocket(url);
                 
                 this.ws.onopen = () => {
                     this.log('Connected!', 'success');
-                    this.updateConnectionStatus(true);
-                    this.startDataStreams();
+                    // Send authorize after OTP connection
+                    if (token) {
+                        this.send({ authorize: token });
+                    }
                 };
                 
                 this.ws.onmessage = (event) => {
                     try {
-                        this.handleMsg(JSON.parse(event.data));
+                        const data = JSON.parse(event.data);
+                        this.handleMsg(data);
                     } catch (e) {
-                        this.log('Parse error', 'error');
+                        this.log('warn', 'Parse error: ' + e.message);
                     }
                 };
                 
@@ -1412,15 +1433,16 @@
                 this.ws = new WebSocket(`${endpoints[0]}?app_id=33sEWv7UCpSUcxNnAgfi1`);
                 
                 this.ws.onopen = () => {
-                    this.log('Connected!', 'success');
+                    this.log('WebSocket open, authorizing...', 'success');
                     this.send({ authorize: token });
                 };
                 
                 this.ws.onmessage = (event) => {
                     try {
-                        this.handleMsg(JSON.parse(event.data));
+                        const data = JSON.parse(event.data);
+                        this.handleMsg(data);
                     } catch (e) {
-                        this.log('Parse error', 'error');
+                        this.log('warn', 'Parse error: ' + e.message);
                     }
                 };
                 
