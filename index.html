@@ -1854,8 +1854,8 @@
                 
                 const contractRequest = {
                     proposal: 1,
+                    subscribe: 1,
                     amount: this.stakeAmount,
-                    barrier: '+0.1',
                     basis: 'stake',
                     contract_type: direction,
                     currency: 'USD',
@@ -1864,6 +1864,7 @@
                     symbol: tradeSymbol
                 };
                 
+                this.log('info', `Sending proposal request for ${tradeSymbol}...`);
                 this.ws.send(JSON.stringify(contractRequest));
             }
 
