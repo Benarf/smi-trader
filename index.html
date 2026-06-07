@@ -2093,57 +2093,30 @@
             
             evaluateStrategy(smiData, lsmaData, currentPrice) {
                 if (!this.isTradingActive || this.isTradingLock) return;
+                
+                // Engine 1: Tick-based Trifecta
                 if (this.activeEngine === 1) {
                     this.evaluateTrifectaStrategy(currentPrice);
-                    return;
                 }
             }
-
+            
+            // Legacy executeTrade - still needed for backward compatibility
             executeTrade(direction, price) {
-                this.isTradingLock = true;
-                
-                // Use active market symbol in multi-market mode
-                const tradeSymbol = this.isMultiMarketMode ? this.activeMarket : this.currentAsset;
-                
-                // Determine expiry based on SMI severity
-                let duration;
-                const absSmi = this.isMultiMarketMode ? 
-                    Math.abs(this.marketData[tradeSymbol].smi) : 
-                    Math.abs(this.lastSMI);
-                
-                if (absSmi >= 60) {
-                    duration = 10;
-                    this.log('trade', `🔥 HYPER-REVERSAL (SMI: ${absSmi.toFixed(1)}), 3-tick expiry`);
-                } else {
-                    duration = 10;
-                    this.log('trade', `📊 Standard (SMI: ${absSmi.toFixed(1)}), 5-tick expiry`);
-                }
-                
-                this.log('trade', `${direction === 'CALL' ? '📈' : '📉'} ${tradeSymbol} ${direction} @ ${price.toFixed(2)}, $${this.stakeAmount.toFixed(2)}, ${duration} ticks`);
-                
-                const contractRequest = {
-                    proposal: 1,
-                    subscribe: 1,
-                    amount: this.stakeAmount,
-                    basis: 'stake',
-                    contract_type: direction,
-                    currency: 'USD',
-                    duration: duration,
-                    duration_unit: 't',
-                    underlying_symbol: tradeSymbol
-                };
-                
-                this.log('info', `Sending proposal for ${tradeSymbol}...`);
-                this.ws.send(JSON.stringify(contractRequest));
+                this.execTradeRecovery(direction, price, 10, 't');
             }
 
             handleProposal(msg) {
                 const proposal = msg.proposal || msg;
                 if (proposal && proposal.id) {
                     this.log('trade', `Proposal received: ${proposal.id}`);
+                    // Get stake from recovery system if enabled
+                    let stake = this.stakeAmount;
+                    if (this.recoveryEnabled && this.consecutiveLosses > 0) {
+                        stake = Math.min(this.recoveryStake * (this.consecutiveLosses + 1), this.maxRecoveryStake);
+                    }
                     this.ws.send(JSON.stringify({
                         buy: proposal.id,
-                        price: this.stakeAmount
+                        price: stake
                     }));
                 }
             }
