@@ -708,8 +708,8 @@
                             </button>
                         </div>
                         <label class="control-label">API Token</label>
-                        <input type="password" class="control-input" id="apiTokenField" placeholder="Paste your Deriv API Token (pat_xxx...)" style="margin-bottom: 8px;">
-                        <button class="btn btn-connect" id="btnLogin" style="width: 100%;">
+                        <input type="text" class="control-input" id="apiTokenField" placeholder="Paste your Deriv API Token (pat_xxx...)" style="margin-bottom: 8px;" onkeypress="if(event.key==='Enter')window.bot.handleConnect();">
+                        <button class="btn btn-connect" id="btnLogin" style="width: 100%;" onclick="window.bot.handleConnect();">
                             [ CONNECT BOT ]
                         </button>
                         <div id="loginStatus" style="margin-top: 10px; font-size: 11px; color: var(--accent-blue); text-align: center;"></div>
@@ -741,10 +741,10 @@
                     <div class="control-section">
                         <label class="control-label">Market Mode</label>
                         <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                            <button class="btn btn-connect" id="btnSingleMarket" style="flex: 1; font-size: 10px; padding: 10px;">
+                            <button class="btn btn-connect" id="btnSingleMarket" style="flex: 1; font-size: 10px; padding: 10px;" onclick="bot.setSingleMarketMode()">
                                 [ SINGLE ]
                             </button>
-                            <button class="btn btn-connect" id="btnMultiMarket" style="flex: 1; font-size: 10px; padding: 10px; background: linear-gradient(135deg, #001133, #ffb700); border-color: var(--accent-yellow);">
+                            <button class="btn btn-connect" id="btnMultiMarket" style="flex: 1; font-size: 10px; padding: 10px; background: linear-gradient(135deg, #001133, #ffb700); border-color: var(--accent-yellow);" onclick="bot.setMultiMarketMode()">
                                 [ AUTO SCAN ]
                             </button>
                         </div>
@@ -984,7 +984,7 @@
                     btnLogin.addEventListener('click', () => this.connectWithToken());
                 }
                 
-                this.elements.btnConnect.addEventListener('click', () => this.connect());
+                this.elements.btnConnect.addEventListener('click', () => this.handleConnect());
                 this.elements.btnDisconnect.addEventListener('click', () => this.disconnect());
                 this.elements.btnClearConsole.addEventListener('click', () => this.clearConsole());
                 this.elements.strategyToggle.addEventListener('change', (e) => this.toggleStrategy(e.target.checked));
@@ -1005,7 +1005,11 @@
                 const savedToken = localStorage.getItem('saved_deriv_token');
                 if (savedToken) {
                     document.getElementById('apiTokenField').value = savedToken;
+                    this.log('info', 'Token auto-loaded from localStorage');
                 }
+                
+                // Make bot accessible for testing
+                window.bot = this;
             }
 
             setSingleMarketMode() {
@@ -1314,7 +1318,17 @@
 
             async handleConnect() {
                 const tokenInput = document.getElementById('apiTokenField');
-                const token = tokenInput.value.trim();
+                let token = tokenInput ? tokenInput.value.trim() : '';
+                
+                // Check localStorage as fallback
+                if (!token) {
+                    const savedToken = localStorage.getItem('saved_deriv_token');
+                    if (savedToken) {
+                        token = savedToken;
+                        if (tokenInput) tokenInput.value = savedToken;
+                        this.log('info', 'Using saved token from localStorage');
+                    }
+                }
                 
                 if (!token) {
                     this.log('error', 'Please paste a valid API token first.');
@@ -1329,6 +1343,7 @@
                 // Save token for page refresh persistence
                 localStorage.setItem('saved_deriv_token', token);
                 this.token = token;
+                this.log('info', 'Token validated, length: ' + token.length);
                 
                 this.log('info', 'Connecting...');
                 
@@ -1351,7 +1366,16 @@
                         })
                     });
                     
-                    const data = await createRes.json();
+                    let data;
+                    const text = await createRes.text();
+                    try {
+                        data = JSON.parse(text);
+                    } catch (e) {
+                        this.log('warn', 'REST auth response not JSON, using direct connect');
+                        this.connectDirect(token);
+                        return;
+                    }
+                    
                     if (data?.data?.balance !== undefined) {
                         this.log(`Balance: $${data.data.balance.toFixed(2)}`, 'success');
                     }
@@ -1363,9 +1387,18 @@
                         headers: { 'Authorization': `Bearer ${token}`, 'Deriv-App-ID': appId }
                     });
                     
-                    const otpData = await otpRes.json();
+                    let otpData;
+                    const otpText = await otpRes.text();
+                    try {
+                        otpData = JSON.parse(otpText);
+                    } catch (e) {
+                        this.log('warn', 'OTP response not JSON, using direct connect');
+                        this.connectDirect(token);
+                        return;
+                    }
+                    
                     if (otpData?.data?.url) {
-                        this.connectWS(otpData.data.url);
+                        this.connectWS(otpData.data.url, token);
                     } else {
                         this.connectDirect(token);
                     }
@@ -1375,22 +1408,25 @@
                 }
             }
 
-            connectWS(url) {
+            connectWS(url, token) {
                 if (this.ws) this.ws.close();
-                this.log('Connecting...');
+                this.log('Connecting via OTP...');
                 this.ws = new WebSocket(url);
                 
                 this.ws.onopen = () => {
                     this.log('Connected!', 'success');
-                    this.updateConnectionStatus(true);
-                    this.startDataStreams();
+                    // Send authorize after OTP connection
+                    if (token) {
+                        this.send({ authorize: token });
+                    }
                 };
                 
                 this.ws.onmessage = (event) => {
                     try {
-                        this.handleMsg(JSON.parse(event.data));
+                        const data = JSON.parse(event.data);
+                        this.handleMsg(data);
                     } catch (e) {
-                        this.log('Parse error', 'error');
+                        this.log('warn', 'Parse error: ' + e.message);
                     }
                 };
                 
@@ -1412,15 +1448,16 @@
                 this.ws = new WebSocket(`${endpoints[0]}?app_id=33sEWv7UCpSUcxNnAgfi1`);
                 
                 this.ws.onopen = () => {
-                    this.log('Connected!', 'success');
+                    this.log('WebSocket open, authorizing...', 'success');
                     this.send({ authorize: token });
                 };
                 
                 this.ws.onmessage = (event) => {
                     try {
-                        this.handleMsg(JSON.parse(event.data));
+                        const data = JSON.parse(event.data);
+                        this.handleMsg(data);
                     } catch (e) {
-                        this.log('Parse error', 'error');
+                        this.log('warn', 'Parse error: ' + e.message);
                     }
                 };
                 
@@ -1453,7 +1490,11 @@
                     }
                     this.updateConnectionStatus(true);
                     this.startHeartbeat();
-                    this.subscribeToAsset();
+                    if (this.isMultiMarketMode) {
+                        this.subscribeAllMarkets();
+                    } else {
+                        this.subscribeToAsset();
+                    }
                     return;
                 }
                 
@@ -1471,7 +1512,7 @@
                     this.handleBuy(msg.buy);
                 }
                 if (msg.proposal_open_contract) {
-                    this.handleContract(msg.proposal_open_contract);
+                    this.handleContractUpdate(msg);
                 }
             }
 
