@@ -1282,7 +1282,14 @@
                 this.updateConnectionStatus(false);
             }
 
-            connectWithToken() {
+            // ==================== WEBSOCKET ====================
+            send(payload) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(payload));
+                }
+            }
+
+            async handleConnect() {
                 const tokenInput = document.getElementById('apiTokenField');
                 const token = tokenInput.value.trim();
                 
@@ -1300,11 +1307,207 @@
                 localStorage.setItem('saved_deriv_token', token);
                 this.token = token;
                 
-                document.getElementById('loginStatus').textContent = '✓ Token Saved';
-                this.log('info', 'Connecting to Deriv...');
+                this.log('info', 'Connecting...');
                 
-                // Connect WebSocket
-                this.connect();
+                // REST auth
+                const appId = '33sEWv7UCpSUcxNnAgfi1';
+                const API_BASE = 'https://api.derivws.com';
+                
+                try {
+                    const createRes = await fetch(`${API_BASE}/trading/v1/options/accounts`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Deriv-App-ID': appId,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            currency: 'USD',
+                            account_type: this.isDemoMode ? 'demo' : 'real',
+                            group: 'row'
+                        })
+                    });
+                    
+                    const data = await createRes.json();
+                    if (data?.data?.balance !== undefined) {
+                        this.log(`Balance: $${data.data.balance.toFixed(2)}`, 'success');
+                    }
+                    
+                    const accountId = data?.data?.account_id || (this.isDemoMode ? 'demo' : 'real');
+                    
+                    const otpRes = await fetch(`${API_BASE}/trading/v1/options/accounts/${accountId}/otp`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Deriv-App-ID': appId }
+                    });
+                    
+                    const otpData = await otpRes.json();
+                    if (otpData?.data?.url) {
+                        this.connectWS(otpData.data.url);
+                    } else {
+                        this.connectDirect(token);
+                    }
+                } catch (e) {
+                    this.log('Auth failed, trying direct...', 'warn');
+                    this.connectDirect(token);
+                }
+            }
+
+            connectWS(url) {
+                if (this.ws) this.ws.close();
+                this.log('Connecting...');
+                this.ws = new WebSocket(url);
+                
+                this.ws.onopen = () => {
+                    this.log('Connected!', 'success');
+                    this.updateConnectionStatus(true);
+                    this.startDataStreams();
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        this.handleMsg(JSON.parse(event.data));
+                    } catch (e) {
+                        this.log('Parse error', 'error');
+                    }
+                };
+                
+                this.ws.onclose = () => {
+                    this.log('Disconnected', 'warn');
+                    this.updateConnectionStatus(false);
+                    this.stopDataStreams();
+                };
+                
+                this.ws.onerror = () => {
+                    this.log('WS Error', 'error');
+                };
+            }
+
+            connectDirect(token) {
+                const endpoints = ['wss://ws.binaryws.com/websockets/v3', 'wss://ws.derivws.com/websockets/v3'];
+                if (this.ws) this.ws.close();
+                this.log('Direct connect...');
+                this.ws = new WebSocket(`${endpoints[0]}?app_id=33sEWv7UCpSUcxNnAgfi1`);
+                
+                this.ws.onopen = () => {
+                    this.log('Connected!', 'success');
+                    this.send({ authorize: token });
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        this.handleMsg(JSON.parse(event.data));
+                    } catch (e) {
+                        this.log('Parse error', 'error');
+                    }
+                };
+                
+                this.ws.onclose = () => {
+                    this.log('Disconnected', 'warn');
+                    this.updateConnectionStatus(false);
+                    this.stopDataStreams();
+                };
+                
+                this.ws.onerror = () => {
+                    this.log('WS Error', 'error');
+                };
+            }
+
+            handleMsg(msg) {
+                // Debug log
+                console.log('WS:', msg);
+                
+                if (msg.error) {
+                    if (msg.error.code === 'AlreadySubscribed') return;
+                    this.log(`Error: ${msg.error.message}`, 'error');
+                    return;
+                }
+                
+                if (msg.authorize) {
+                    this.log(`Authorized! Balance: $${msg.authorize.balance.toFixed(2)}`, 'success');
+                    this.updateConnectionStatus(true);
+                    return;
+                }
+                
+                // Handle ticks
+                if (msg.tick) {
+                    this.routeMessage(msg);
+                }
+                
+                // Proposals
+                if (msg.proposal) {
+                    this.handleProposal(msg.proposal);
+                }
+                if (msg.buy) {
+                    this.handleBuy(msg.buy);
+                }
+                if (msg.proposal_open_contract) {
+                    this.handleContract(msg.proposal_open_contract);
+                }
+            }
+
+            routeMessage(msg) {
+                // Handle authorize response (from new connection pattern)
+                if (msg.authorize) {
+                    this.log('success', `Authorized! Balance: $${msg.authorize.balance.toFixed(2)}`);
+                    this.balance = msg.authorize.balance;
+                    if (this.elements.balance) {
+                        this.elements.balance.textContent = `$${this.balance.toFixed(2)}`;
+                    }
+                    this.startHeartbeat();
+                    this.subscribeToAsset();
+                    this.updateConnectionStatus(true);
+                    return;
+                }
+                
+                // Handle tick data
+                if (msg.tick) {
+                    this.handleTick(msg);
+                    return;
+                }
+                
+                // Original switch-based routing
+                switch (msg.msg_type) {
+                    case 'authorize':
+                        this.handleAuthorization(msg);
+                        break;
+                    case 'active_symbols':
+                        this.handleActiveSymbols(msg);
+                        break;
+                    case 'tick':
+                        this.handleTick(msg);
+                        break;
+                    case 'proposal_open_contract':
+                        this.handleContractUpdate(msg);
+                        break;
+                    case 'proposal':
+                        this.handleProposal(msg);
+                        break;
+                    case 'error':
+                        this.log('error', `API Error: ${msg.error?.message || 'Unknown error'}`);
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            startDataStreams() {
+                // Subscribe to ticks for active market
+                if (this.currentAsset) {
+                    this.send({
+                        ticks: this.currentAsset,
+                        subscribe: 1
+                    });
+                    this.log('info', `Subscribed to ${this.currentAsset} ticks`);
+                }
+            }
+
+            stopDataStreams() {
+                this.tickHistory = [];
+            }
+
+            connectWithToken() {
+                // Use the new async handleConnect method
+                this.handleConnect();
             }
 
             log(type, message) {
@@ -1347,51 +1550,6 @@
                 }
             }
 
-            connect() {
-                if (!this.token) {
-                    this.log('warning', 'Not authenticated. Please login first.');
-                    return;
-                }
-                
-                this.log('info', 'Initiating WebSocket connection...');
-                
-                // Use standard Deriv WebSocket endpoint
-                const wsUrl = `${this.wsEndpoint}?app_id=${this.appId}&l=en`;
-                this.log('info', `Connecting to: ${this.wsEndpoint}`);
-                
-                try {
-                    this.ws = new WebSocket(wsUrl);
-                } catch (e) {
-                    this.log('error', `Failed to create WebSocket: ${e.message}`);
-                    return;
-                }
-                
-                this.ws.onopen = () => {
-                    this.log('success', '✓ WebSocket connected. Authorizing token...');
-                    this.ws.send(JSON.stringify({ authorize: this.token }));
-                };
-                
-                this.ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        this.routeMessage(data);
-                    } catch (e) {
-                        this.log('error', `Failed to parse message: ${e.message}`);
-                    }
-                };
-                
-                this.ws.onerror = (error) => {
-                    this.log('error', 'WebSocket error occurred.');
-                    console.error('WebSocket Error:', error);
-                };
-                
-                this.ws.onclose = (event) => {
-                    this.log('warning', `Connection closed. Code: ${event.code}`);
-                    this.updateConnectionStatus(false);
-                    this.stopHeartbeat();
-                };
-            }
-
             disconnect() {
                 if (this.isDemoMode) {
                     this.stopDemoMode();
@@ -1424,31 +1582,6 @@
                 if (this.heartbeatInterval) {
                     clearInterval(this.heartbeatInterval);
                     this.heartbeatInterval = null;
-                }
-            }
-
-            routeMessage(msg) {
-                switch (msg.msg_type) {
-                    case 'authorize':
-                        this.handleAuthorization(msg);
-                        break;
-                    case 'active_symbols':
-                        this.handleActiveSymbols(msg);
-                        break;
-                    case 'tick':
-                        this.handleTick(msg);
-                        break;
-                    case 'proposal_open_contract':
-                        this.handleContractUpdate(msg);
-                        break;
-                    case 'proposal':
-                        this.handleProposal(msg);
-                        break;
-                    case 'error':
-                        this.log('error', `API Error: ${msg.error?.message || 'Unknown error'}`);
-                        break;
-                    default:
-                        break;
                 }
             }
 
