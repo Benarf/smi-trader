@@ -1364,6 +1364,12 @@
                     case 'balance':
                         this.handleBalance(msg);
                         break;
+                    case 'ohlc':
+                        this.handleOHLC(msg);
+                        break;
+                    case 'candles':
+                        this.handleOHLC(msg);
+                        break;
                     case 'error':
                         this.log('error', `API Error: ${msg.error?.message || 'Unknown error'}`);
                         break;
@@ -1814,35 +1820,282 @@
                 this.lastSignal = smiData.signal;
             }
 
+            // ========== DUAL ENGINE SYSTEM ==========
+            activeEngine: 1,
+            tickCache: [],
+            candleCache: [],
+            ohlcChartData: [], // 1 day of OHLC for charting
+            chartCanvas: null,
+            chartCtx: null,
+            recoveryEnabled: false,
+            consecutiveLosses: 0,
+            maxRecoveryStake: 10,
+            recoveryStake: 1,
+            
+            tickAssetConfig: {
+                'R_100': { bandwidth: 0.150, velocity: 0.080 },
+                'R_75': { bandwidth: 0.060, velocity: 0.035 },
+                'R_50': { bandwidth: 0.030, velocity: 0.015 },
+                'R_10': { bandwidth: 0.008, velocity: 0.002 }
+            },
+            
+            candleAssetConfig: {
+                'R_100': { bandwidth: 1.20, momentum: 0.50 },
+                'R_75': { bandwidth: 0.60, momentum: 0.25 },
+                'R_50': { bandwidth: 0.30, momentum: 0.10 },
+                'R_10': { bandwidth: 0.05, momentum: 0.01 }
+            },
+            
+            switchEngine(num) {
+                this.activeEngine = num;
+                this.tickCache = [];
+                this.candleCache = [];
+                if (num === 2) {
+                    this.subscribeOHLC();
+                }
+                this.log('info', `🔄 Switched to Engine ${num} (${num === 1 ? 'Tick-Based' : 'Candle-Based'})`);
+            },
+            
+            // Engine 1: Tick-based Trifecta
+            evaluateTrifectaStrategy(tickPrice) {
+                this.tickCache.push(tickPrice);
+                if (this.tickCache.length > 120) this.tickCache.shift();
+                if (this.tickCache.length < 50) return;
+                
+                const ticks = this.tickCache;
+                const asset = this.currentAsset || 'R_50';
+                const cfg = this.tickAssetConfig[asset] || this.tickAssetConfig['R_50'];
+                
+                const bb = this.calcBollinger(ticks, 14);
+                const lsma = this.calcLSMA(ticks, 25);
+                const smi = this.calcSMI(ticks, 10, 3, 3);
+                
+                if (bb.bandwidth > cfg.bandwidth) return;
+                if (Math.abs(lsma.slope) < 0.00001) return;
+                
+                const crossedUp = smi.line > smi.signal && this.lastSMILine <= this.lastSMISignal;
+                const crossedDown = smi.line < smi.signal && this.lastSMILine >= this.lastSMISignal;
+                this.lastSMILine = smi.line;
+                this.lastSMISignal = smi.signal;
+                
+                if (lsma.direction === 'UP' && crossedUp && smi.line < -50) {
+                    const dur = Math.abs(smi.line) >= 75 ? 6 : 9;
+                    this.execTradeRecovery('CALL', tickPrice, dur, 't');
+                } else if (lsma.direction === 'DOWN' && crossedDown && smi.line > 50) {
+                    const dur = Math.abs(smi.line) >= 75 ? 6 : 9;
+                    this.execTradeRecovery('PUT', tickPrice, dur, 't');
+                }
+            },
+            
+            // Engine 2: Candle-based with OHLC subscription
+            evaluateOneMinuteStrategy(candle) {
+                // Add to strategy cache
+                this.candleCache.push(candle);
+                if (this.candleCache.length > 100) this.candleCache.shift();
+                if (this.candleCache.length < 40) return;
+                
+                // Add to OHLC chart data (keep 1 day = ~1440 candles at 1 min)
+                this.ohlcChartData.push(candle);
+                if (this.ohlcChartData.length > 1440) this.ohlcChartData.shift();
+                
+                // Draw chart if canvas exists
+                this.drawOHLCChart();
+                
+                const candles = this.candleCache;
+                const asset = this.currentAsset || 'R_50';
+                const cfg = this.candleAssetConfig[asset] || this.candleAssetConfig['R_50'];
+                
+                const closes = candles.map(c => c.close);
+                const bb = this.calcBollinger(closes, 14);
+                const lsma = this.calcLSMA(closes, 25);
+                const smi = this.calcSMICandle(candles, 10, 3, 3);
+                
+                if (bb.bandwidth > cfg.bandwidth) return;
+                if (Math.abs(lsma.slope) < 0.0001) return;
+                
+                const crossedUp = smi.line > smi.signal && this.lastSMILine <= this.lastSMISignal;
+                const crossedDown = smi.line < smi.signal && this.lastSMILine >= this.lastSMISignal;
+                this.lastSMILine = smi.line;
+                this.lastSMISignal = smi.signal;
+                
+                if (lsma.direction === 'UP' && crossedUp && smi.line < -50) {
+                    const dur = Math.abs(smi.line) >= 75 ? 2 : 5;
+                    this.execTradeRecovery('CALL', candle.close, dur, 'm');
+                } else if (lsma.direction === 'DOWN' && crossedDown && smi.line > 50) {
+                    const dur = Math.abs(smi.line) >= 75 ? 2 : 5;
+                    this.execTradeRecovery('PUT', candle.close, dur, 'm');
+                }
+            },
+            
+            // Subscribe to 1-minute OHLC candles
+            subscribeOHLC() {
+                const symbol = this.isMultiMarketMode ? this.activeMarket : this.currentAsset;
+                if (!symbol) return;
+                
+                this.ws.send(JSON.stringify({
+                    ohlc: 1,
+                    subscribe: 1,
+                    adjust_image: 1,
+                    style: 'candles',
+                    underlying_symbol: symbol,
+                    granularity: 60 // 1 minute
+                }));
+                this.log('info', `📊 Subscribed to OHLC: ${symbol} (1min candles)`);
+            },
+            
+            // Handle OHLC data
+            handleOHLC(msg) {
+                if (msg.ohlc && msg.ohlc.open !== undefined) {
+                    const candle = {
+                        time: msg.ohlc.open_time || Date.now(),
+                        open: msg.ohlc.open,
+                        high: msg.ohlc.high,
+                        low: msg.ohlc.low,
+                        close: msg.ohlc.close
+                    };
+                    
+                    // Update chart data
+                    if (this.activeEngine === 2) {
+                        this.evaluateOneMinuteStrategy(candle);
+                    } else {
+                        this.ohlcChartData.push(candle);
+                        if (this.ohlcChartData.length > 1440) this.ohlcChartData.shift();
+                    }
+                }
+            },
+            
+            // Draw OHLC chart
+            drawOHLCChart() {
+                if (!this.chartCtx || this.ohlcChartData.length < 2) return;
+                
+                const ctx = this.chartCtx;
+                const canvas = this.chartCanvas;
+                const data = this.ohlcChartData.slice(-200); // Last 200 candles
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                const padding = 40;
+                const chartW = canvas.width - padding * 2;
+                const chartH = canvas.height - padding * 2;
+                
+                // Find price range
+                let minP = Infinity, maxP = -Infinity;
+                data.forEach(c => {
+                    minP = Math.min(minP, c.low);
+                    maxP = Math.max(maxP, c.high);
+                });
+                const priceRange = maxP - minP || 1;
+                
+                const candleW = chartW / data.length;
+                
+                // Draw candles
+                data.forEach((c, i) => {
+                    const x = padding + i * candleW;
+                    const yTop = padding + (1 - (c.high - minP) / priceRange) * chartH;
+                    const yBottom = padding + (1 - (c.low - minP) / priceRange) * chartH;
+                    const yOpen = padding + (1 - (c.open - minP) / priceRange) * chartH;
+                    const yClose = padding + (1 - (c.close - minP) / priceRange) * chartH;
+                    
+                    const isGreen = c.close >= c.open;
+                    ctx.strokeStyle = isGreen ? '#00ff00' : '#ff0000';
+                    ctx.fillStyle = isGreen ? '#00ff00' : '#ff0000';
+                    
+                    // Wick
+                    ctx.beginPath();
+                    ctx.moveTo(x + candleW/2, yTop);
+                    ctx.lineTo(x + candleW/2, yBottom);
+                    ctx.stroke();
+                    
+                    // Body
+                    const bodyTop = Math.min(yOpen, yClose);
+                    const bodyH = Math.abs(yClose - yOpen) || 2;
+                    ctx.fillRect(x + 1, bodyTop, candleW - 2, bodyH);
+                });
+            },
+            
+            // Initialize chart canvas
+            initChartCanvas(canvasId) {
+                const canvas = document.getElementById(canvasId);
+                if (canvas) {
+                    this.chartCanvas = canvas;
+                    this.chartCtx = canvas.getContext('2d');
+                }
+            },
+            
+            // Indicators
+            calcBollinger(data, period) {
+                const d = data.slice(-period);
+                const sma = d.reduce((a,b) => a+b, 0) / period;
+                const std = Math.sqrt(d.reduce((s,v) => s + Math.pow(v-sma,2), 0) / period);
+                const bw = (2*std) / sma;
+                return { sma, bandwidth: bw };
+            },
+            
+            calcLSMA(data, period) {
+                const d = data.slice(-period);
+                let sx=0, sy=0, sxy=0, sxx=0;
+                for(let i=0; i<d.length; i++) { sx+=i; sy+=d[i]; sxy+=i*d[i]; sxx+=i*i; }
+                const slope = (d.length*sxy - sx*sy) / (d.length*sxx - sx*sx);
+                return { slope, direction: slope > 0 ? 'UP' : 'DOWN' };
+            },
+            
+            calcSMI(data, p, e1, e2) {
+                const d = data.slice(-p);
+                const close = d[d.length-1];
+                const high = Math.max(...d), low = Math.min(...d);
+                const range = high - low || 1;
+                const rd = ((close - (high+low)/2) / (range/2)) * 100;
+                if (!this._ema1) this._ema1 = {};
+                if (!this._ema2) this._ema2 = {};
+                this._ema1.v = rd*(2/(e1+1)) + (this._ema1.v||rd)*(1-2/(e1+1));
+                this._ema2.v = this._ema1.v*(2/(e2+1)) + (this._ema2.v||this._ema1.v)*(1-2/(e2+1));
+                const sig = this._ema2.v*(2/(e2+1)) + (this._sig||this._ema2.v)*(1-2/(e2+1));
+                this._sig = sig;
+                return { line: this._ema1.v, signal: sig };
+            },
+            
+            calcSMICandle(candles, p, e1, e2) {
+                const d = candles.slice(-p);
+                const close = d[d.length-1].close;
+                const high = Math.max(...d.map(c=>c.high));
+                const low = Math.min(...d.map(c=>c.low));
+                const range = high - low || 1;
+                const rd = ((close - (high+low)/2) / (range/2)) * 100;
+                if (!this._cema1) this._cema1 = {};
+                if (!this._cema2) this._cema2 = {};
+                this._cema1.v = rd*(2/(e1+1)) + (this._cema1.v||rd)*(1-2/(e1+1));
+                this._cema2.v = this._cema1.v*(2/(e2+1)) + (this._cema2.v||this._cema1.v)*(1-2/(e2+1));
+                const sig = this._cema2.v*(2/(e2+1)) + (this._csig||this._cema2.v)*(1-2/(e2+1));
+                this._csig = sig;
+                return { line: this._cema1.v, signal: sig };
+            },
+            
+            // Trade with recovery
+            execTradeRecovery(direction, price, duration, unit) {
+                this.isTradingLock = true;
+                let stake = this.stakeAmount;
+                if (this.recoveryEnabled && this.consecutiveLosses > 0) {
+                    stake = Math.min(this.recoveryStake * (this.consecutiveLosses + 1), this.maxRecoveryStake);
+                }
+                const sym = this.isMultiMarketMode ? this.activeMarket : this.currentAsset;
+                this.ws.send(JSON.stringify({
+                    proposal: 1, subscribe: 1, amount: stake, basis: 'stake',
+                    contract_type: direction, currency: 'USD', duration, duration_unit: unit, underlying_symbol: sym
+                }));
+            },
+            
+            onTradeComplete(won) {
+                if (this.recoveryEnabled) {
+                    won ? this.consecutiveLosses = 0 : this.consecutiveLosses++;
+                }
+                this.isTradingLock = false;
+            },
+            
             evaluateStrategy(smiData, lsmaData, currentPrice) {
                 if (!this.isTradingActive || this.isTradingLock) return;
-                
-                // Skip if market is flat
-                if (lsmaData.isFlat) {
-                    this.log('warning', 'Market flat - skipping trade');
+                if (this.activeEngine === 1) {
+                    this.evaluateTrifectaStrategy(currentPrice);
                     return;
-                }
-                
-                const smi = smiData.value;
-                const signal = smiData.signal;
-                const lsmaUp = lsmaData.direction === 'UP';
-                const lsmaDown = lsmaData.direction === 'DOWN';
-                
-                // SMI crossed above signal
-                const smiCrossedUp = smi > signal && this.lastSMI <= this.lastSignal;
-                const smiCrossedDown = smi < signal && this.lastSMI >= this.lastSignal;
-                
-                // Momentum: distance from centerline
-                const momentum = Math.abs(smi - signal);
-                
-                // Improved filter: Require momentum confirmation
-                // CALL: LSMA UP + SMI crosses above Signal + strong momentum + in oversold zone
-                if (lsmaUp && smiCrossedUp && smi <= -10 && smi >= -50 && momentum > 5) {
-                    this.executeTrade('CALL', currentPrice);
-                }
-                // PUT: LSMA DOWN + SMI crosses below Signal + strong momentum + in overbought zone
-                else if (lsmaDown && smiCrossedDown && smi >= 10 && smi <= 50 && momentum > 5) {
-                    this.executeTrade('PUT', currentPrice);
                 }
             }
 
@@ -1910,7 +2163,8 @@
                         this.netProfit += pnl;
                         this.tradeCount++;
                         
-                        const result = pnl >= 0 ? 'WIN' : 'LOSS';
+                        const won = pnl > 0;
+                        const result = won ? 'WIN' : 'LOSS';
                         this.log('trade', `🏁 Contract ${result}: ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`);
                         
                         // Update P/L display
@@ -1929,8 +2183,8 @@
                             this.ws.send(JSON.stringify({ balance: 1 }));
                         }
                         
-                        this.isTradingLock = false;
-                        this.log('info', 'Trade lock released. Ready for next signal.');
+                        // Call recovery system
+                        this.onTradeComplete(won);
                     }
                 }
             }
