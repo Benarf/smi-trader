@@ -1869,11 +1869,13 @@
             }
 
             handleProposal(msg) {
-                if (msg.proposal) {
-                    this.log('trade', `Proposal received: ${msg.proposal.id}`);
+                // Handle both full message (msg_type: 'proposal') and just proposal object
+                const proposal = msg.proposal || msg;
+                if (proposal && proposal.id) {
+                    this.log('trade', `Proposal received: ${proposal.id}`);
                     // Accept the proposal
                     this.ws.send(JSON.stringify({
-                        buy: msg.proposal.id,
+                        buy: proposal.id,
                         price: this.stakeAmount
                     }));
                 }
