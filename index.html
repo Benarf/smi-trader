@@ -1033,6 +1033,11 @@
                 this.log('success', '  AUTO SCAN MODE - 18 Markets');
                 this.log('info', '  Scanning all markets for signals');
                 this.log('success', '═══════════════════════════════════════');
+                
+                // Subscribe to all markets if already connected
+                if (this.isConnected) {
+                    this.subscribeAllMarkets();
+                }
             }
 
             initMarketData() {
@@ -1671,10 +1676,28 @@
             }
 
             subscribeToAsset() {
-                this.log('info', `Subscribing to ${this.currentAsset}...`);
-                this.send({
-                    ticks: this.currentAsset,
-                    subscribe: 1
+                if (this.isMultiMarketMode) {
+                    this.subscribeAllMarkets();
+                } else {
+                    this.log('info', `Subscribing to ${this.currentAsset}...`);
+                    this.send({
+                        ticks: this.currentAsset,
+                        subscribe: 1
+                    });
+                    this.send({
+                        proposal_open_contract: 1,
+                        subscribe: 1
+                    });
+                }
+            }
+
+            subscribeAllMarkets() {
+                this.log('info', `Subscribing to all ${this.markets.length} markets...`);
+                this.markets.forEach(symbol => {
+                    this.send({
+                        ticks: symbol,
+                        subscribe: 1
+                    });
                 });
                 this.send({
                     proposal_open_contract: 1,
